@@ -8,15 +8,17 @@ A modern social networking application built with **Flutter**, featuring real-ti
 
 ## 📱 Screenshots | 应用截图
 
-| Profile & Edit | Social Feed | Post Detail |
-|:---:|:---:|:---:|
-| <img src="assets/profile.png" width="250" alt="Profile Page"/> | <img src="assets/feed.png" width="250" alt="Feed Page"/> | <img src="assets/detail.png" width="250" alt="Detail Page"/> |
+### 👤 Profile & Social Feed (个人中心与动态)
 
-| Global Chat | Translation | Language Select |
-|:---:|:---:|:---:|
-| <img src="assets/chat.png" width="250" alt="World Channel"/> | <img src="assets/translation.png" width="250" alt="Translation Feature"/> | <img src="assets/language.png" width="250" alt="Language Select"/> |
+| My Profile | Edit Profile | Social Feed | Post Detail |
+|:---:|:---:|:---:|:---:|
+| <img src="https://github.com/user-attachments/assets/0b4efb87-b809-42aa-b141-1923975c37d8" width="200" alt="My Profile"/> | <img src="https://github.com/user-attachments/assets/06fad354-cbef-442e-933b-4526d74923b3" width="200" alt="Edit Profile"/> | <img src="https://github.com/user-attachments/assets/62822dbd-518b-4986-a77c-0e7f8d0d9336" width="200" alt="Social Feed"/> | <img src="https://github.com/user-attachments/assets/d3023aa6-c960-4243-b3e1-831328f1726d" width="200" alt="Post Detail"/> |
 
-> *Note: Replace the image paths above with your actual image file locations.*
+### 💬 Chat & Utilities (聊天与工具)
+
+| Global Chat | Translation Feature | Language Select |
+|:---:|:---:|:---:|
+| <img src="https://github.com/user-attachments/assets/1efe9d6b-6908-4b3d-aa69-ba0873d67d0a" width="200" alt="Global Chat"/> | <img src="https://github.com/user-attachments/assets/016bda19-35c8-41ce-9588-d3504cad0262" width="200" alt="Translation"/> | <img src="https://github.com/user-attachments/assets/0ae76d3e-5d62-489a-bdaa-e450ba4a221d" width="200" alt="Language Select"/> |
 
 ## ✨ Features | 功能特性
 
@@ -45,7 +47,7 @@ A modern social networking application built with **Flutter**, featuring real-ti
 
 *   **Frontend**: Flutter (Dart)
 *   **Database**: Lsisql
-*   **Architecture**: MVVM (Recommended/Implied)
+*   **Architecture**: MVVM (Recommended)
 
 ## 🚀 Getting Started | 开始使用
 
