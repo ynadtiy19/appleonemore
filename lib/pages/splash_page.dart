@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'dart:math' as math;
 
 import '../controllers/auth_controller.dart';
 import '../services/db_service.dart';
@@ -16,17 +17,42 @@ class SplashPage extends StatefulWidget {
 }
 
 class _SplashPageState extends State<SplashPage>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-  bool _isInitialized = false;
+    with TickerProviderStateMixin {
+  // 背景水墨动画控制器
+  late AnimationController _bgController;
+
+  // Logo 浮动动画控制器
+  late AnimationController _floatController;
+
+  // 文本进场动画控制器
+  late AnimationController _textController;
 
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(
+
+    // 1. 背景水墨流动动画
+    _bgController = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 4),
     )..repeat(reverse: true);
+
+    // 2. Logo 呼吸/浮动效果
+    _floatController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 3),
+    )..repeat(reverse: true);
+
+    // 3. 文本错落进场
+    _textController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1500),
+    );
+
+    // 启动文本动画
+    Future.delayed(const Duration(milliseconds: 500), () {
+      if (mounted) _textController.forward();
+    });
 
     _initApp();
   }
@@ -63,7 +89,7 @@ class _SplashPageState extends State<SplashPage>
 
     if (mounted) {
       Get.off(
-        () => const AuthPage(),
+            () => const AuthPage(),
         transition: Transition.fadeIn,
         duration: const Duration(milliseconds: 800),
       );
@@ -72,106 +98,194 @@ class _SplashPageState extends State<SplashPage>
 
   @override
   void dispose() {
-    _controller.dispose();
+    _bgController.dispose();
+    _floatController.dispose();
+    _textController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    // 定义淡雅的自然色调
+    const Color paperBg = Color(0xFFFBFBFC); // 宣纸白
+    const Color textDark = Color(0xFF2C3E50); // 墨色
+    const Color accentGreen = Color(0xFFA8C8A6); // 淡雅的鼠尾草绿，呼应Logo
+
     return Scaffold(
-      backgroundColor: const Color(0xFFFBFBFC), // 极淡的纸张色
+      backgroundColor: paperBg,
       body: Stack(
         children: [
-          // 背景动态意境
+          // 1. 背景动态意境 (保留原有的 Painter)
           AnimatedBuilder(
-            animation: _controller,
+            animation: _bgController,
             builder: (context, child) {
               return CustomPaint(
-                painter: NatureInkPainter(_controller.value),
+                painter: NatureInkPainter(_bgController.value),
                 size: Size.infinite,
               );
             },
           ),
 
+          // 2. 主体内容
           Center(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                // 呼吸感的 Logo
-                TweenAnimationBuilder<double>(
-                  tween: Tween(begin: 0.0, end: 1.0),
-                  duration: const Duration(seconds: 2),
-                  builder: (context, value, child) {
-                    return Opacity(
-                      opacity: value,
-                      child: Transform.translate(
-                        offset: Offset(0, 20 * (1 - value)),
-                        child: child,
+                // ---------------- LOGO 区域 ----------------
+                AnimatedBuilder(
+                  animation: _floatController,
+                  builder: (context, child) {
+                    // 使用正弦曲线制造轻微的上下浮动感，如叶子漂浮
+                    final double offsetY = math.sin(_floatController.value * math.pi) * 8;
+                    final double scale = 1.0 + (_floatController.value * 0.03);
+
+                    return Transform.translate(
+                      offset: Offset(0, offsetY),
+                      child: Transform.scale(
+                        scale: scale,
+                        child: Container(
+                          width: 120, // 稍微加大尺寸以展示图片细节
+                          height: 120,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle, // 改为圆形背景更符合自然意境
+                            color: Colors.white,
+                            boxShadow: [
+                              BoxShadow(
+                                color: accentGreen.withOpacity(0.2), // 绿色光晕
+                                blurRadius: 40,
+                                spreadRadius: 5,
+                                offset: const Offset(0, 10),
+                              ),
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.03),
+                                blurRadius: 10,
+                                spreadRadius: 0,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
+                          ),
+                          padding: const EdgeInsets.all(24.0), // 图片留白
+                          child: Image.asset(
+                            'images/playstore.png',
+                            fit: BoxFit.contain,
+                          ),
+                        ),
                       ),
                     );
                   },
-                  child: Container(
-                    width: 80,
-                    height: 80,
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(30),
-                      boxShadow: [
-                        BoxShadow(
-                          color: const Color(0xFF4A6CF7).withOpacity(0.05),
-                          blurRadius: 30,
-                          spreadRadius: 10,
+                ),
+
+                const SizedBox(height: 50),
+
+                // ---------------- 主标题：观笔自然 ----------------
+                // 使用 Slide + Fade 组合动画
+                SlideTransition(
+                  position: Tween<Offset>(
+                    begin: const Offset(0, 0.5),
+                    end: Offset.zero,
+                  ).animate(CurvedAnimation(
+                    parent: _textController,
+                    curve: const Interval(0.0, 0.6, curve: Curves.easeOutCubic),
+                  )),
+                  child: FadeTransition(
+                    opacity: Tween<double>(begin: 0.0, end: 1.0).animate(
+                      CurvedAnimation(
+                        parent: _textController,
+                        curve: const Interval(0.0, 0.6, curve: Curves.easeOut),
+                      ),
+                    ),
+                    child: const Text(
+                      '观笔自然',
+                      style: TextStyle(
+                        fontSize: 32, // 字体稍大
+                        fontWeight: FontWeight.w300,
+                        letterSpacing: 12, // 宽字间距，营造空灵感
+                        color: textDark,
+                        fontFamily: "Serif", // 如果有宋体或衬线体效果更佳
+                      ),
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 20),
+
+                // ---------------- 副标题：英文 ----------------
+                SlideTransition(
+                  position: Tween<Offset>(
+                    begin: const Offset(0, 0.5),
+                    end: Offset.zero,
+                  ).animate(CurvedAnimation(
+                    parent: _textController,
+                    curve: const Interval(0.3, 0.9, curve: Curves.easeOutCubic),
+                  )),
+                  child: FadeTransition(
+                    opacity: Tween<double>(begin: 0.0, end: 1.0).animate(
+                      CurvedAnimation(
+                        parent: _textController,
+                        curve: const Interval(0.3, 0.9, curve: Curves.easeOut),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(width: 20, height: 1, color: accentGreen),
+                        const SizedBox(width: 10),
+                        Text(
+                          'OBSERVE THE BRUSH • RETURN TO NATURE',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w500,
+                            letterSpacing: 3,
+                            color: textDark.withOpacity(0.5),
+                          ),
                         ),
+                        const SizedBox(width: 10),
+                        Container(width: 20, height: 1, color: accentGreen),
                       ],
                     ),
-                    child: const Icon(
-                      Icons.brush_outlined,
-                      size: 36,
-                      color: Color(0xFF4A6CF7),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 40),
-
-                // 逐字渐显感的主标题
-                const Text(
-                  '观笔自然',
-                  style: TextStyle(
-                    fontSize: 28,
-                    fontWeight: FontWeight.w300,
-                    letterSpacing: 8, // 增加字间距更有意境
-                    color: Color(0xFF2C3E50),
-                  ),
-                ),
-                const SizedBox(height: 16),
-
-                // 渐隐渐现的副标题
-                Text(
-                  'OBSERVE THE BRUSH  •  RETURN TO NATURE',
-                  style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w400,
-                    letterSpacing: 2,
-                    color: Colors.grey.withOpacity(0.6),
                   ),
                 ),
               ],
             ),
           ),
 
-          // 底部加载提示
+          // 3. 底部加载提示 (淡入)
           Positioned(
             bottom: 60,
             left: 0,
             right: 0,
-            child: Center(
-              child: Text(
-                '万物静观皆自得',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontStyle: FontStyle.italic,
-                  color: Colors.grey.shade400,
-                  letterSpacing: 2,
+            child: FadeTransition(
+              opacity: Tween<double>(begin: 0.0, end: 1.0).animate(
+                CurvedAnimation(
+                  parent: _textController,
+                  curve: const Interval(0.6, 1.0, curve: Curves.easeOut),
+                ),
+              ),
+              child: Center(
+                child: Column(
+                  children: [
+                    // 一个极小的加载指示器，颜色与主题融合
+                    SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 1.5,
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                            Colors.grey.withOpacity(0.3)
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      '万物静观皆自得',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontStyle: FontStyle.italic,
+                        color: Colors.grey.withOpacity(0.6),
+                        letterSpacing: 4,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),

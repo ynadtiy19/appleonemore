@@ -58,7 +58,6 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         db.updateOnlineStatus(uid, false);
       } else if (state == AppLifecycleState.resumed) {
         db.updateOnlineStatus(uid, true);
-        // 可选：重新触发 AtChat 心跳
       }
     }
   }

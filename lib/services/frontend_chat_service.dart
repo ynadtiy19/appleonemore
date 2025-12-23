@@ -1,10 +1,12 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:at_client/at_client.dart';
 import 'package:at_onboarding_cli/at_onboarding_cli.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -21,6 +23,8 @@ class FrontendChatService extends GetxService {
   static const String nameSpace = 'atsign';
   static const String rootDomain = 'root.atsign.org';
   static const String groupConversationId = 'GROUP_GLOBAL'; // 群聊标识
+
+  final MessageDeduplicator _deduplicator = MessageDeduplicator();
 
   final DbService _db = Get.find();
   final StorageService _storage = Get.find();
@@ -51,6 +55,35 @@ class FrontendChatService extends GetxService {
 
     final supportDir = await getApplicationDocumentsDirectory();
     String keysPath = '${supportDir.path}/${myAtsign}_key.atKeys';
+
+    // 🔥🔥🔥 新增逻辑：检查并复制密钥文件 🔥🔥🔥
+    File keyFile = File(keysPath);
+    if (!await keyFile.exists()) {
+      debugPrint("⚠️ [Frontend] 密钥文件不存在，正在从 Assets 复制...");
+      try {
+        // 从 assets 读取数据
+        final byteData = await rootBundle.load(
+          'assets/keys/${myAtsign}_key.atKeys',
+        );
+        // 写入到手机的文档目录
+        await keyFile.writeAsBytes(
+          byteData.buffer.asUint8List(
+            byteData.offsetInBytes,
+            byteData.lengthInBytes,
+          ),
+        );
+        debugPrint("✅ [Frontend] 密钥文件复制成功: $keysPath");
+      } catch (e) {
+        debugPrint("❌ [Frontend] 无法从 Assets 复制密钥文件: $e");
+        debugPrint(
+          "请确保 assets/@gemini2banana_key.atKeys 文件存在且已在 pubspec.yaml 中配置",
+        );
+        return; // 复制失败直接返回，避免后面报错
+      }
+    } else {
+      debugPrint("ℹ️ [Frontend] 密钥文件已存在");
+    }
+    // 🔥🔥🔥 新增逻辑结束 🔥🔥🔥
 
     AtOnboardingPreference config = AtOnboardingPreference()
       ..namespace = nameSpace
@@ -188,6 +221,15 @@ class FrontendChatService extends GetxService {
             Map<String, dynamic> payload = jsonDecode(jsonVal);
             ChatMsgModel msg = ChatMsgModel.fromMap(payload);
 
+            // 🔥 2. 获取消息 ID
+            String? msgId = msg.id;
+
+            // 🔥 3. 执行去重检查
+            if (_deduplicator.isDuplicate(msgId)) {
+              debugPrint("🛡️ [Frontend] 拦截到重复消息，ID: $msgId");
+              return;
+            }
+
             int? myId = _storage.getUserId();
             if (myId == null) return;
 
@@ -197,7 +239,7 @@ class FrontendChatService extends GetxService {
                 debugPrint("👥 [Frontend] 收到群聊消息: ${msg.content}");
 
                 // 1. 存入群聊表
-                await _db.saveGroupMessage(msg);
+                // await _db.saveGroupMessage(msg);
                 // 2. 触发群聊监听
                 incomingGroupMessage.value = msg;
                 return;
@@ -254,8 +296,45 @@ class FrontendChatService extends GetxService {
   @override
   void onClose() {
     _heartbeatTimer?.cancel();
+    _deduplicator.clear();
     super.onClose();
   }
 }
 
 //uuu
+
+/// 消息去重器
+/// 用于在短时间内过滤掉具有相同 ID 的重复消息
+class MessageDeduplicator {
+  // 存储已处理的消息 ID
+  final HashSet<String> _processedIds = HashSet<String>();
+
+  // 缓存过期时间（默认 10 秒，足以覆盖网络重发或后端双推的时间差）
+  final Duration cacheDuration;
+
+  MessageDeduplicator({this.cacheDuration = const Duration(seconds: 10)});
+
+  /// 检查消息是否重复
+  /// 返回 true 表示是重复消息（应丢弃）
+  /// 返回 false 表示是新消息（应处理）
+  bool isDuplicate(String messageId) {
+    if (_processedIds.contains(messageId)) {
+      return true; // 已存在，是重复消息
+    }
+
+    // 不存在，标记为已处理
+    _processedIds.add(messageId);
+
+    // 设置定时器，在指定时间后移除该 ID，防止内存无限增长
+    Future.delayed(cacheDuration, () {
+      _processedIds.remove(messageId);
+    });
+
+    return false; // 不是重复消息
+  }
+
+  /// 清空所有缓存（在退出登录或销毁服务时调用）
+  void clear() {
+    _processedIds.clear();
+  }
+}

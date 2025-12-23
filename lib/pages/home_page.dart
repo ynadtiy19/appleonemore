@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:hugeicons/hugeicons.dart';
 import 'package:intl/intl.dart';
+import 'package:visibility_detector/visibility_detector.dart';
 
 import '../controllers/home_controller.dart';
 import '../models/post_model.dart';
+import '../widgets/random_empty_state_widget.dart';
 import 'editor_page.dart';
 import 'post_detail_page.dart';
 import 'user_profile_page.dart';
@@ -16,70 +18,76 @@ class HomePage extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = Get.put(HomeController());
 
-    return Scaffold(
-      backgroundColor: const Color(0xFFF7F8FA),
-      appBar: AppBar(
-        title: const Text(
-          "观笔 动态",
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
-        backgroundColor: Colors.white,
-        elevation: 0,
-        surfaceTintColor: Colors.transparent,
-        actions: [
-          IconButton(
-            onPressed: c.loadPosts,
-            icon: const HugeIcon(
-              icon: HugeIcons.strokeRoundedGlobalRefresh,
-              size: 20.0,
-            ),
+    return VisibilityDetector(
+      key: const Key('GroupChatPage_visibility'),
+      onVisibilityChanged: (info) {
+        if (info.visibleFraction == 1.0) {
+          // c.silentUpdate();
+        }
+      },
+      child: Scaffold(
+        backgroundColor: const Color(0xFFF7F8FA),
+        appBar: AppBar(
+          title: const Text(
+            "观笔 动态",
+            style: TextStyle(fontWeight: FontWeight.bold),
           ),
-        ],
-      ),
-      body: Obx(() {
-        if (c.isLoading.value) {
-          return const Center(
-            child: CircularProgressIndicator(color: Colors.blueAccent),
-          );
-        }
-        if (c.posts.isEmpty) {
-          return const Center(
-            child: Text("暂无内容，快来发布第一篇吧！", style: TextStyle(color: Colors.grey)),
-          );
-        }
-
-        return ListView.separated(
-          padding: const EdgeInsets.only(top: 10, bottom: 80),
-          itemCount: c.posts.length,
-          itemBuilder: (context, index) {
-            final post = c.posts[index];
-            return _PostListItem(
-              post: post,
-              onTap: () async {
-                await Get.to(() => PostDetailPage(postId: post.id));
-                c.silentUpdate();
-              },
-              onUserTap: () {
-                Get.to(
-                  () => UserProfilePage(
-                    userId: post.userId,
-                    userName: post.authorName,
-                  ),
-                );
-              },
-              // 🔥 首页不显示删除按钮
-              onDelete: null,
+          backgroundColor: Colors.white,
+          elevation: 0,
+          surfaceTintColor: Colors.transparent,
+          actions: [
+            IconButton(
+              onPressed: c.loadPosts,
+              icon: const HugeIcon(
+                icon: HugeIcons.strokeRoundedGlobalRefresh,
+                size: 20.0,
+              ),
+            ),
+          ],
+        ),
+        body: Obx(() {
+          if (c.isLoading.value) {
+            return const Center(
+              child: CircularProgressIndicator(color: Colors.blueAccent),
             );
+          }
+          if (c.posts.isEmpty) {
+            return const RandomEmptyStateWidget();
+          }
+
+          return ListView.separated(
+            padding: const EdgeInsets.only(top: 10, bottom: 80),
+            itemCount: c.posts.length,
+            itemBuilder: (context, index) {
+              final post = c.posts[index];
+              return _PostListItem(
+                post: post,
+                onTap: () async {
+                  await Get.to(() => PostDetailPage(postId: post.id));
+                  c.silentUpdate();
+                },
+                onUserTap: () {
+                  Get.to(
+                    () => UserProfilePage(
+                      userId: post.userId,
+                      userName: post.authorName,
+                    ),
+                  );
+                },
+                // 🔥 首页不显示删除按钮
+                onDelete: null,
+              );
+            },
+            separatorBuilder: (context, index) =>
+                Container(height: 1, color: const Color(0xFFF7F7F7)),
+          );
+        }),
+        floatingActionButton: _CustomFloatingActionButton(
+          onPressed: () async {
+            final result = await Get.to(() => const EditorPage());
+            if (result == true) c.silentUpdate();
           },
-          separatorBuilder: (context, index) =>
-              Container(height: 1, color: const Color(0xFFF7F7F7)),
-        );
-      }),
-      floatingActionButton: _CustomFloatingActionButton(
-        onPressed: () async {
-          final result = await Get.to(() => const EditorPage());
-          if (result == true) c.loadPosts();
-        },
+        ),
       ),
     );
   }

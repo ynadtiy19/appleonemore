@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:hugeicons/hugeicons.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:visibility_detector/visibility_detector.dart';
 
 import '../models/chat_msg_model.dart';
 import '../models/sticker_model.dart';
@@ -30,7 +31,7 @@ class GroupChatController extends GetxController {
   @override
   void onInit() {
     super.onInit();
-    _loadHistory();
+    loadHistory();
 
     // 🔥 监听全局群聊消息
     ever(_chatService.incomingGroupMessage, (ChatMsgModel? msg) {
@@ -40,7 +41,7 @@ class GroupChatController extends GetxController {
     });
   }
 
-  Future<void> _loadHistory() async {
+  Future<void> loadHistory() async {
     final history = await _db.getGroupMessages(limit: 50);
     messages.assignAll(history);
     isLoading.value = false;
@@ -62,7 +63,7 @@ class GroupChatController extends GetxController {
       );
 
       // 发送成功后刷新列表 (因为 sendMessage 内部已存库)
-      await _loadHistory();
+      await loadHistory();
     } finally {
       isSending.value = false;
     }
@@ -157,14 +158,24 @@ class _GroupChatPageState extends State<GroupChatPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color.fromRGBO(244, 247, 254, 1),
-      appBar: _buildAppBar(),
-      body: Column(
-        children: [
-          Expanded(child: _buildMessageList()),
-          _buildInputArea(),
-        ],
+    return VisibilityDetector(
+      key: const Key('GroupChatPage_visibility'),
+      onVisibilityChanged: (info) {
+        if (info.visibleFraction == 1.0) {
+          // controller.loadHistory();
+          //消除焦点
+          // FocusManager.instance.primaryFocus?.unfocus();
+        }
+      },
+      child: Scaffold(
+        backgroundColor: const Color.fromRGBO(244, 247, 254, 1),
+        appBar: _buildAppBar(),
+        body: Column(
+          children: [
+            Expanded(child: _buildMessageList()),
+            _buildInputArea(),
+          ],
+        ),
       ),
     );
   }

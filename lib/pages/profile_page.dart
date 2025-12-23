@@ -201,7 +201,6 @@ class _MyPostsListState extends State<_MyPostsList> {
   }
 }
 
-// ... 保持 _HeaderCard, _StatCard, _BioCard, _EditButton 不变 ...
 class _HeaderCard extends StatelessWidget {
   final User user;
 

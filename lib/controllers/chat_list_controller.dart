@@ -29,15 +29,10 @@ class ChatListController extends GetxController {
       int? myId = storage.getUserId();
       if (myId == null) return;
 
-      // ✅ 适配：使用新的 getConversations，它返回包含快照的 Map
       final rawSessions = await db.getConversations();
 
       List<ChatSession> list = [];
       for (var map in rawSessions) {
-        // 手动映射：因为现在的 conversations 表直接包含了 peer_name, peer_avatar
-        // 我们不需要再查 User 表了，极快！
-
-        // 构造一个临时的 User 对象给 UI 使用
         User tempUser = User(
           id: map['peer_id'] ?? 0,
           username: "user_${map['peer_id']}", // 占位

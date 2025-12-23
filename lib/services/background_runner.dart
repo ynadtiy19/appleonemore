@@ -60,7 +60,6 @@ class BackgroundRunner {
 
   static Future<String> _prepareKeyFile() async {
     const String filename = '@dolphin9interim_key.atKeys';
-    // ... (保持原有的路径处理逻辑不变) ...
     if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
       if (kDebugMode) return 'assets/keys/$filename';
       return 'data/flutter_assets/assets/keys/$filename';

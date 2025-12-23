@@ -86,9 +86,6 @@ class ChatDetailController extends GetxController {
 
     isSending.value = true;
     try {
-      // ✅ 适配：调用 FrontendChatService 发送
-      // 这里的 receiverAtsign 假设存在 otherUser.username 中，或者您需要通过 ID 查找
-      // 假设 username 就是 AtSign，或者通过某种映射
       String targetAtsign = otherUser?.username ?? "@unknown";
 
       bool success = await atService.sendMessage(
@@ -100,7 +97,7 @@ class ChatDetailController extends GetxController {
       );
 
       if (success) {
-        await loadHistory(); // 重新加载以显示新消息 (因为 sendMessage 内部已经存库)
+        await loadHistory();
       }
     } finally {
       isSending.value = false;
@@ -108,10 +105,7 @@ class ChatDetailController extends GetxController {
   }
 
   void sendSticker(StickerItem sticker) {
-    sendChatMessage(
-      "[IMAGE]${sticker.stickerUrl}[/IMAGE]",
-      type: 2,
-    ); // 假设 2 是 sticker
+    sendChatMessage("[IMAGE]${sticker.stickerUrl}[/IMAGE]", type: 2);
   }
 
   Future<void> clearAllHistory() async {

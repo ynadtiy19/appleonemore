@@ -1,5 +1,5 @@
-import 'dart:convert';
 import 'dart:async'; // 引入异步支持
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_quill/flutter_quill.dart' as quill;
@@ -24,7 +24,8 @@ class PostDetailPage extends StatefulWidget {
   State<PostDetailPage> createState() => _PostDetailPageState();
 }
 
-class _PostDetailPageState extends State<PostDetailPage> with TickerProviderStateMixin {
+class _PostDetailPageState extends State<PostDetailPage>
+    with TickerProviderStateMixin {
   final DbService _db = Get.find();
   final StorageService _storage = Get.find();
 
@@ -290,7 +291,6 @@ class _PostDetailPageState extends State<PostDetailPage> with TickerProviderStat
         backgroundColor: Colors.green.withOpacity(0.1),
         colorText: Colors.green[800],
       );
-
     } catch (e) {
       Get.snackbar("翻译失败", e.toString());
       print("Translation Error: $e");
@@ -315,7 +315,7 @@ class _PostDetailPageState extends State<PostDetailPage> with TickerProviderStat
   void _goToAuthorProfile() {
     if (_post == null) return;
     Get.to(
-          () => UserProfilePage(userId: _post!.userId, userName: _post!.authorName),
+      () => UserProfilePage(userId: _post!.userId, userName: _post!.authorName),
     );
   }
 
@@ -341,27 +341,30 @@ class _PostDetailPageState extends State<PostDetailPage> with TickerProviderStat
           title: _isLoadingPost
               ? const SizedBox()
               : GestureDetector(
-            onTap: _goToAuthorProfile,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                CircleAvatar(
-                  radius: 14,
-                  backgroundImage: (_post?.authorAvatar != null)
-                      ? NetworkImage(_post!.authorAvatar!)
-                      : null,
-                  child: _post?.authorAvatar == null
-                      ? const Icon(Icons.person, size: 16)
-                      : null,
+                  onTap: _goToAuthorProfile,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      CircleAvatar(
+                        radius: 14,
+                        backgroundImage: (_post?.authorAvatar != null)
+                            ? NetworkImage(_post!.authorAvatar!)
+                            : null,
+                        child: _post?.authorAvatar == null
+                            ? const Icon(Icons.person, size: 16)
+                            : null,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        _post?.authorName ?? "Unknown",
+                        style: const TextStyle(
+                          fontSize: 16,
+                          color: Colors.black87,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-                const SizedBox(width: 8),
-                Text(
-                  _post?.authorName ?? "Unknown",
-                  style: const TextStyle(fontSize: 16, color: Colors.black87),
-                ),
-              ],
-            ),
-          ),
           actions: [
             Padding(
               padding: const EdgeInsets.only(right: 12),
@@ -371,117 +374,126 @@ class _PostDetailPageState extends State<PostDetailPage> with TickerProviderStat
         ),
         body: _isLoadingPost
             ? const Center(
-          child: CircularProgressIndicator(color: Colors.blueAccent),
-        )
+                child: CircularProgressIndicator(color: Colors.blueAccent),
+              )
             : _post == null
             ? const Center(child: Text("文章不存在或已被删除"))
             : Column(
-          children: [
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 10,
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // 标题
-                    Text(
-                      _post!.title,
-                      style: theme.textTheme.headlineMedium?.copyWith(
-                        fontWeight: FontWeight.w800,
-                        color: Colors.black87,
-                        height: 1.3,
+                children: [
+                  Expanded(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 10,
                       ),
-                    ),
-                    const SizedBox(height: 10),
-
-                    // 信息栏
-                    Row(
-                      children: [
-                        Text(
-                          DateFormat('yyyy年MM月dd日 HH:mm').format(_post!.createdAt),
-                          style: TextStyle(
-                            color: Colors.grey[500],
-                            fontSize: 13,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // 标题
+                          Text(
+                            _post!.title,
+                            style: theme.textTheme.headlineMedium?.copyWith(
+                              fontWeight: FontWeight.w800,
+                              color: Colors.black87,
+                              height: 1.3,
+                            ),
                           ),
-                        ),
-                        if (isShowingTranslation) ...[
-                          const SizedBox(width: 10),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 3,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.blue.shade50,
-                              borderRadius: BorderRadius.circular(4),
-                              border: Border.all(color: Colors.blue.withOpacity(0.2)),
-                            ),
-                            child: Row(
-                              children: const [
-                                Icon(Icons.translate, size: 12, color: Colors.blue),
-                                SizedBox(width: 4),
-                                Text(
-                                  "机器译文",
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    color: Colors.blue,
-                                    fontWeight: FontWeight.bold,
+                          const SizedBox(height: 10),
+
+                          // 信息栏
+                          Row(
+                            children: [
+                              Text(
+                                DateFormat(
+                                  'yyyy年MM月dd日 HH:mm',
+                                ).format(_post!.createdAt),
+                                style: TextStyle(
+                                  color: Colors.grey[500],
+                                  fontSize: 13,
+                                ),
+                              ),
+                              if (isShowingTranslation) ...[
+                                const SizedBox(width: 10),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 3,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.blue.shade50,
+                                    borderRadius: BorderRadius.circular(4),
+                                    border: Border.all(
+                                      color: Colors.blue.withOpacity(0.2),
+                                    ),
+                                  ),
+                                  child: Row(
+                                    children: const [
+                                      Icon(
+                                        Icons.translate,
+                                        size: 12,
+                                        color: Colors.blue,
+                                      ),
+                                      SizedBox(width: 4),
+                                      Text(
+                                        "机器译文",
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          color: Colors.blue,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
                               ],
+                            ],
+                          ),
+                          const SizedBox(height: 24),
+
+                          // Quill 内容区域
+                          if (_readC != null)
+                            AnimatedOpacity(
+                              duration: const Duration(milliseconds: 300),
+                              opacity: isTranslating ? 0.3 : 1.0,
+                              child: quill.QuillEditor.basic(
+                                controller: _readC!,
+                                config: quill.QuillEditorConfig(
+                                  embedBuilders:
+                                      FlutterQuillEmbeds.editorBuilders(),
+                                ),
+                              ),
+                            ),
+
+                          const SizedBox(height: 40),
+                          _buildLikeBar(),
+                          const Divider(height: 40),
+                          const Text(
+                            "精选评论",
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
                             ),
                           ),
+                          const SizedBox(height: 16),
+                          if (comments.isEmpty)
+                            const Center(
+                              child: Padding(
+                                padding: EdgeInsets.all(20),
+                                child: Text(
+                                  "暂无评论",
+                                  style: TextStyle(color: Colors.grey),
+                                ),
+                              ),
+                            ),
+                          ...comments.map((c) => _buildCommentItem(c)),
+                          const SizedBox(height: 40),
                         ],
-                      ],
-                    ),
-                    const SizedBox(height: 24),
-
-                    // Quill 内容区域
-                    if (_readC != null)
-                      AnimatedOpacity(
-                        duration: const Duration(milliseconds: 300),
-                        opacity: isTranslating ? 0.3 : 1.0,
-                        child: quill.QuillEditor.basic(
-                          controller: _readC!,
-                          config: quill.QuillEditorConfig(
-                            embedBuilders: FlutterQuillEmbeds.editorBuilders(),
-                          ),
-                        ),
-                      ),
-
-                    const SizedBox(height: 40),
-                    _buildLikeBar(),
-                    const Divider(height: 40),
-                    const Text(
-                      "精选评论",
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
                       ),
                     ),
-                    const SizedBox(height: 16),
-                    if (comments.isEmpty)
-                      const Center(
-                        child: Padding(
-                          padding: EdgeInsets.all(20),
-                          child: Text(
-                            "暂无评论",
-                            style: TextStyle(color: Colors.grey),
-                          ),
-                        ),
-                      ),
-                    ...comments.map((c) => _buildCommentItem(c)),
-                    const SizedBox(height: 40),
-                  ],
-                ),
+                  ),
+                  _buildBottomInput(theme),
+                ],
               ),
-            ),
-            _buildBottomInput(theme),
-          ],
-        ),
       ),
     );
   }
@@ -491,7 +503,10 @@ class _PostDetailPageState extends State<PostDetailPage> with TickerProviderStat
       return const SizedBox(
         width: 20,
         height: 20,
-        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.grey),
+        child: CircularProgressIndicator(
+          strokeWidth: 2,
+          color: Colors.blueAccent,
+        ),
       );
     }
     return IconButton(
@@ -519,13 +534,21 @@ class _PostDetailPageState extends State<PostDetailPage> with TickerProviderStat
                 color: isLiked ? Colors.pink.shade100 : Colors.transparent,
               ),
               boxShadow: isLiked
-                  ? [BoxShadow(color: Colors.pink.withOpacity(0.1), blurRadius: 8, offset: const Offset(0, 4))]
+                  ? [
+                      BoxShadow(
+                        color: Colors.pink.withOpacity(0.1),
+                        blurRadius: 8,
+                        offset: const Offset(0, 4),
+                      ),
+                    ]
                   : [],
             ),
             child: Row(
               children: [
                 HugeIcon(
-                  icon: isLiked ? HugeIcons.strokeRoundedFavourite : HugeIcons.strokeRoundedFavourite,
+                  icon: isLiked
+                      ? HugeIcons.strokeRoundedFavourite
+                      : HugeIcons.strokeRoundedFavourite,
                   size: 24,
                   color: isLiked ? Colors.pink : Colors.grey,
                 ),
@@ -568,12 +591,14 @@ class _PostDetailPageState extends State<PostDetailPage> with TickerProviderStat
                   : null,
               child: c.authorAvatar == null
                   ? Text(
-                c.authorName.isNotEmpty ? c.authorName[0].toUpperCase() : "?",
-                style: const TextStyle(
-                  color: Colors.blue,
-                  fontWeight: FontWeight.bold,
-                ),
-              )
+                      c.authorName.isNotEmpty
+                          ? c.authorName[0].toUpperCase()
+                          : "?",
+                      style: const TextStyle(
+                        color: Colors.blue,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    )
                   : null,
             ),
             const SizedBox(width: 12),
@@ -677,7 +702,8 @@ class _AnimatedLanguageSheet extends StatefulWidget {
   State<_AnimatedLanguageSheet> createState() => _AnimatedLanguageSheetState();
 }
 
-class _AnimatedLanguageSheetState extends State<_AnimatedLanguageSheet> with SingleTickerProviderStateMixin {
+class _AnimatedLanguageSheetState extends State<_AnimatedLanguageSheet>
+    with SingleTickerProviderStateMixin {
   late AnimationController _controller;
 
   @override
@@ -750,25 +776,26 @@ class _AnimatedLanguageSheetState extends State<_AnimatedLanguageSheet> with Sin
                 final name = widget.languages.values.elementAt(index);
 
                 // 逐个动画效果
-                final animation = Tween<Offset>(
-                  begin: const Offset(0, 0.5),
-                  end: Offset.zero,
-                ).animate(
-                  CurvedAnimation(
-                    parent: _controller,
-                    curve: Interval(
-                      index * 0.05,
-                      0.5 + index * 0.05,
-                      curve: Curves.easeOutBack,
-                    ),
-                  ),
-                );
+                final animation =
+                    Tween<Offset>(
+                      begin: const Offset(0, 0.5),
+                      end: Offset.zero,
+                    ).animate(
+                      CurvedAnimation(
+                        parent: _controller,
+                        curve: Interval(
+                          index * 0.05,
+                          0.5 + index * 0.05,
+                          curve: Curves.easeOutBack,
+                        ),
+                      ),
+                    );
 
                 final fadeAnim = Tween<double>(begin: 0, end: 1).animate(
-                    CurvedAnimation(
-                      parent: _controller,
-                      curve: Interval(index * 0.05, 0.5 + index * 0.05),
-                    )
+                  CurvedAnimation(
+                    parent: _controller,
+                    curve: Interval(index * 0.05, 0.5 + index * 0.05),
+                  ),
                 );
 
                 return AnimatedBuilder(
@@ -781,7 +808,10 @@ class _AnimatedLanguageSheetState extends State<_AnimatedLanguageSheet> with Sin
                         child: InkWell(
                           onTap: () => widget.onLanguageSelected(key),
                           child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 24,
+                              vertical: 16,
+                            ),
                             child: Row(
                               children: [
                                 Container(

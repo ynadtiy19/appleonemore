@@ -25,7 +25,7 @@ class HomeController extends GetxController {
 
   Future<void> silentUpdate() async {
     final newPosts = await _db.getPosts();
-    posts.value = newPosts; // GetX 会自动比较差异并只更新 UI 变动部分
+    posts.value = newPosts;
   }
 
   Future<void> deletePost(int id) async {

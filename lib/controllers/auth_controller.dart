@@ -18,10 +18,8 @@ class AuthController extends GetxController {
   final DbService _db = Get.find();
   final StorageService _storage = Get.find();
 
-  // ✅ 适配：引用新的前端服务
   final FrontendChatService _chatService = Get.find();
 
-  // 检查是否已登录
   Future<void> checkAutoLogin() async {
     String? token = await _storage.getToken();
     if (token != null) {
@@ -60,21 +58,16 @@ class AuthController extends GetxController {
   void _loginSuccess(User user) async {
     await _storage.setToken(user.token);
 
-    // ✅ 适配：新的 StorageService 需要存更多信息用于快照
     await _storage.setUserInfo(
       user.id,
       user.nickname ?? user.username,
       user.avatarUrl,
     );
 
-    // 赋值给响应式变量
     currentUser.value = user;
 
-    // ✅ 适配：启动 AtChat 认证 & 心跳循环
     _chatService.authenticate();
 
-    // ✅ 适配：监听新的心跳状态 isBackendAlive
-    // 一旦后台连接成功，更新数据库在线状态
     ever(_chatService.isBackendAlive, (bool isAlive) {
       if (isAlive) {
         _db.updateOnlineStatus(user.id, true);
@@ -91,7 +84,6 @@ class AuthController extends GetxController {
       final user = await _db.getUserById(uid);
       if (user != null) {
         currentUser.value = user;
-        // 同步更新本地缓存
         await _storage.setUserInfo(
           user.id,
           user.nickname ?? "",
