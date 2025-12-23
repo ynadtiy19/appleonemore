@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
 import '../controllers/auth_controller.dart';
-import '../services/background_runner.dart';
 import '../services/db_service.dart';
 import '../services/frontend_chat_service.dart';
 import '../services/storage_service.dart';
@@ -49,7 +48,7 @@ class _SplashPageState extends State<SplashPage>
     // 此时 UI 线程已经准备好
     // 4. 🚀 启动后台隔离线程 (后台用: @dolphin9interim)
     // 这将开启一个新的线程，拥有独立的 DbService 和 BackendRelayService
-    await BackgroundRunner.startService();
+    // await BackgroundRunner.startService();
 
     debugPrint("✅ [System] 所有服务初始化完成");
 

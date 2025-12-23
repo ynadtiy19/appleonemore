@@ -35,7 +35,8 @@ class FrontendChatService extends GetxService {
   final RxMap<int, bool> userOnlineStatus = <int, bool>{}.obs;
   Timer? _heartbeatTimer;
 
-  AtClient get atClient => AtClientManager.getInstance().atClient;
+  // 🔥 修改 1: 将 atClient 声明为类的成员变量，以便全局访问
+  AtClient? _atClient;
 
   Future<FrontendChatService> init() async {
     if (Platform.isAndroid) {
@@ -46,6 +47,7 @@ class FrontendChatService extends GetxService {
 
   Future<void> authenticate() async {
     if (isOnboarded.value) return;
+    AtServiceFactory? atServiceFactory;
 
     final supportDir = await getApplicationDocumentsDirectory();
     String keysPath = '${supportDir.path}/${myAtsign}_key.atKeys';
@@ -57,11 +59,13 @@ class FrontendChatService extends GetxService {
       ..isLocalStoreRequired = true
       ..rootDomain = rootDomain
       ..atKeysFilePath = keysPath
+      ..commitLogPath = '${supportDir.path}/.atsign/$myAtsign/storage/commitLog'
       ..atProtocolEmitted = Version(2, 0, 0);
 
     AtOnboardingService onboardingService = AtOnboardingServiceImpl(
       myAtsign,
       config,
+      atServiceFactory: atServiceFactory,
     );
 
     try {
@@ -72,7 +76,9 @@ class FrontendChatService extends GetxService {
         isOnboarded.value = true;
         isBackendAlive.value = true;
         debugPrint("✅ [Frontend] 认证成功");
-        _startFrontendMonitor();
+        // 🔥 修改 2: 获取实例并赋值给成员变量 _atClient
+        _atClient = AtClientManager.getInstance().atClient;
+        _startFrontendMonitor(_atClient!);
         _startHeartbeatLoop();
       }
     } catch (e) {
@@ -88,6 +94,12 @@ class FrontendChatService extends GetxService {
     required String conversationId, // 传入会话ID
     int type = 1,
   }) async {
+    // 🔥 修改 3: 检查 _atClient 是否已初始化
+    if (_atClient == null) {
+      debugPrint("❌ [Frontend] 尚未认证，无法发送消息");
+      return false;
+    }
+
     final myId = _storage.getUserId();
     final myName = _storage.getUserName();
     final myAvatar = _storage.getUserAvatar();
@@ -116,22 +128,28 @@ class FrontendChatService extends GetxService {
       }
     }
 
+    final metaData = Metadata()
+      ..isPublic = false
+      ..isEncrypted = true
+      ..namespaceAware = true;
+
     // 3. 触发通知
     final key = AtKey()
       ..key = 'attalk'
       ..sharedBy = myAtsign
       ..sharedWith = toAtsign
       ..namespace = nameSpace
-      ..metadata = (Metadata()..ttr = -1);
+      ..metadata = metaData;
 
     try {
       for (int retry = 0; retry < 3; retry++) {
         try {
-          NotificationResult result = await atClient.notificationService.notify(
-            NotificationParams.forUpdate(key, value: msg.toJson()),
-            checkForFinalDeliveryStatus: false,
-            waitForFinalDeliveryStatus: false,
-          );
+          NotificationResult result = await _atClient!.notificationService
+              .notify(
+                NotificationParams.forUpdate(key, value: msg.toJson()),
+                checkForFinalDeliveryStatus: false,
+                waitForFinalDeliveryStatus: false,
+              );
 
           if (result.atClientException != null) {
             retry++;
@@ -152,7 +170,7 @@ class FrontendChatService extends GetxService {
   }
 
   // --- 监听逻辑 ---
-  void _startFrontendMonitor() {
+  void _startFrontendMonitor(AtClient atClient) {
     String regex = 'attalk.$nameSpace@';
 
     atClient.notificationService
@@ -160,6 +178,10 @@ class FrontendChatService extends GetxService {
         .listen((notification) async {
           String? jsonVal = notification.value;
           debugPrint("📩 [Frontend] 收到消息: $jsonVal");
+          // //使用土司显示出来
+          // Get.showSnackbar(
+          //   GetSnackBar(message: jsonVal, duration: Duration(seconds: 3)),
+          // );
           if (jsonVal == null) return;
 
           try {

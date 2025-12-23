@@ -1,10 +1,11 @@
 class Constants {
-  // LibSQL
+  // LibSQL用户帖子，线上名字叫做(sqlite3.open('big-vanadyl.db'));
   static const String dbUrl =
       "libsql://production-db-aws-us-west-2-27f0534851-big-vanadyl-globe.turso.io";
   static const String dbToken =
       "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJpYXQiOjE3NjYwNzcxNTIsInAiOnsicnciOnsibnMiOlsiY2ViZDlhMTItOWVlNS00ZmFjLTljZTEtNTFmZmU1MTFhYWQ0Il19fSwicmlkIjoiZjM4MzMwYmEtMmI5MC00ODI5LThkOTItODIyNzhjNGNlMTk0In0.MbiA2eRIb5qGgAvbp6E7tvsqeaRIiObQu4dKeyqNGsikij52Gq1JFnBKonoggosukBEtr7XRrE4L8fTapqs-BQ";
 
+  //LibSQL消息，线上名字叫做(sqlite3.open('disloyal-wallaby.db'));
   static const String msgDbUrl =
       "libsql://production-db-aws-us-west-2-27f0534851-disloyal-wallaby-globe.turso.io";
   static const String msgDbToken =
