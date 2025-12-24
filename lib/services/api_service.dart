@@ -109,19 +109,22 @@ class ApiService {
 
   static Future<TranslationResult?> translate(
     String text,
-    String targetLang,
-  ) async {
+    String targetLang, {
+    String? system,
+  }) async {
     if (text.trim().isEmpty) return null;
 
     try {
+      // 请确保 Constants 类已定义
       var request = http.Request('POST', Uri.parse(Constants.translationUrl));
       request.headers.addAll(Constants.translationHeaders);
 
       final bodyData = {
         "msgId": DateTime.now().millisecondsSinceEpoch.toString(),
         "text": text,
-        // 这里只传用户选中的那一个语言代码
         "languages": [targetLang],
+        // 如果 system 不为空，则加入请求体
+        if (system != null) "system": system,
       };
 
       request.body = jsonEncode(bodyData);
@@ -130,15 +133,18 @@ class ApiService {
 
       if (streamedResponse.statusCode == 200) {
         final json = jsonDecode(responseBody);
-        // 假设 API 返回结构是 data -> translations 数组
-        final translations = json['data']['translations'] as List;
 
-        if (translations.isNotEmpty) {
-          final t = translations.first;
-          return TranslationResult(
-            language: t['language_translated'], // API 返回的语言代码
-            text: t['message_translated'], // API 返回的翻译文本
-          );
+        // 建议加上空安全检查
+        if (json['data'] != null && json['data']['translations'] != null) {
+          final translations = json['data']['translations'] as List;
+
+          if (translations.isNotEmpty) {
+            final t = translations.first;
+            return TranslationResult(
+              language: t['language_translated'] ?? targetLang,
+              text: t['message_translated'] ?? text,
+            );
+          }
         }
       }
       return null;

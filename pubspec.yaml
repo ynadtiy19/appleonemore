@@ -39,6 +39,7 @@ dependencies:
   path_provider: ^2.1.5
   cached_network_image: ^3.4.1
   flutter_quill: ^11.5.0
+  flutter_local_notifications: ^19.5.0
   shared_preferences: ^2.5.4
   flutter_secure_storage: ^10.0.0
   flutter_localization: ^0.3.3
@@ -62,7 +63,6 @@ dependencies:
   permission_handler: ^12.0.1
 
   visibility_detector: ^0.4.0+2
-  libsql_dart: ^0.8.0
   intl: ^0.20.2
 
 

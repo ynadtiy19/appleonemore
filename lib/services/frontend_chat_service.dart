@@ -14,7 +14,9 @@ import 'package:uuid/uuid.dart';
 import 'package:version/version.dart';
 
 import '../models/chat_msg_model.dart';
+import '../models/social_notification_model.dart';
 import 'db_service.dart';
+import 'notification_handler_service.dart';
 import 'storage_service.dart';
 
 class FrontendChatService extends GetxService {
@@ -25,6 +27,9 @@ class FrontendChatService extends GetxService {
   static const String groupConversationId = 'GROUP_GLOBAL'; // 群聊标识
 
   final MessageDeduplicator _deduplicator = MessageDeduplicator();
+  final NotificationHandlerService _notificationHandler = Get.put(
+    NotificationHandlerService(),
+  );
 
   final DbService _db = Get.find();
   final StorageService _storage = Get.find();
@@ -119,6 +124,73 @@ class FrontendChatService extends GetxService {
     }
   }
 
+  // --- 发送社交通知 (新增函数) ---
+  Future<bool> sendSocialNotification({
+    required int postId,
+    required String postTitle,
+    String? postImage,
+    required int creatorId, // 帖子作者ID
+    required String? creatorName, // 帖子作者ID
+    required String type, // 'LIKE' or 'COMMENT'
+    String? commentContent,
+  }) async {
+    if (_atClient == null) {
+      debugPrint("❌ [Frontend] 未认证，无法发送通知");
+      return false;
+    }
+
+    final myId = _storage.getUserId();
+    final myName = _storage.getUserName();
+    final myAvatar = _storage.getUserAvatar();
+
+    if (myId == null) return false;
+
+    // 构建通知模型
+    final notification = SocialNotificationModel(
+      id: const Uuid().v4(),
+      type: type,
+      postId: postId,
+      postTitle: postTitle,
+      postImage: postImage,
+      creatorId: creatorId,
+      creatorName: creatorName,
+      triggerId: myId,
+      triggerName: myName,
+      triggerAvatar: myAvatar,
+      commentContent: commentContent,
+      timestamp: DateTime.now().millisecondsSinceEpoch,
+    );
+
+    final metaData = Metadata()
+      ..isPublic = false
+      ..isEncrypted = true
+      ..ttr = -1
+      ..namespaceAware = true;
+
+    // 通知的 Key，区分于聊天的 'attalk'，这里用 'atsocial'
+    // 或者为了复用监听流，继续使用 'attalk' 但依靠内部 dataType 区分
+    // 这里为了简便复用同一个监听 Regex，我们继续使用 'attalk' Key
+    final key = AtKey()
+      ..key = 'atsocial'
+      ..sharedBy = myAtsign
+      ..sharedWith = toAtsign
+      ..namespace = nameSpace
+      ..metadata = metaData;
+
+    try {
+      await _atClient!.notificationService.notify(
+        NotificationParams.forUpdate(key, value: notification.toJson()),
+        checkForFinalDeliveryStatus: false,
+        waitForFinalDeliveryStatus: false,
+      );
+      debugPrint("🔔 [Frontend] 社交通知发送成功: ${notification.type}");
+      return true;
+    } catch (e) {
+      debugPrint("❌ [Frontend] 社交通知发送失败: $e");
+      return false;
+    }
+  }
+
   // --- 发送逻辑 ---
   Future<bool> sendMessage({
     required String content,
@@ -164,6 +236,7 @@ class FrontendChatService extends GetxService {
     final metaData = Metadata()
       ..isPublic = false
       ..isEncrypted = true
+      ..ttr = -1
       ..namespaceAware = true;
 
     // 3. 触发通知
@@ -204,10 +277,11 @@ class FrontendChatService extends GetxService {
 
   // --- 监听逻辑 ---
   void _startFrontendMonitor(AtClient atClient) {
-    String regex = 'attalk.$nameSpace@';
+    String regexattalk = 'attalk.$nameSpace@';
+    String regexatsocial = 'atsocial.$nameSpace@';
 
     atClient.notificationService
-        .subscribe(regex: regex, shouldDecrypt: true)
+        .subscribe(regex: regexattalk, shouldDecrypt: true)
         .listen((notification) async {
           String? jsonVal = notification.value;
           debugPrint("📩 [Frontend] 收到消息: $jsonVal");
@@ -266,6 +340,43 @@ class FrontendChatService extends GetxService {
             }
           } catch (e) {
             debugPrint("Msg Parse Error: $e");
+          }
+        });
+
+    atClient.notificationService
+        .subscribe(regex: regexatsocial, shouldDecrypt: true)
+        .listen((notification) async {
+          String? jsonVal = notification.value;
+          if (jsonVal == null) return;
+
+          try {
+            Map<String, dynamic> payload = jsonDecode(jsonVal);
+
+            // 转换为社交通知模型
+            SocialNotificationModel note = SocialNotificationModel.fromMap(
+              payload,
+            );
+
+            // 1. 去重检查
+            if (_deduplicator.isDuplicate(note.id)) {
+              debugPrint("🛡️ [SocialStream] 拦截重复通知: ${note.id}");
+              return;
+            }
+
+            // 2. 排除自己（多端同步情况）
+            int? myId = _storage.getUserId();
+            if (myId != null && note.triggerId == myId) {
+              return;
+            }
+
+            debugPrint(
+              "🔔 [SocialStream] 收到专属流通知: ${note.type} 来自 ${note.triggerName}",
+            );
+
+            // 3. 执行 UI 弹出逻辑
+            _notificationHandler.handleIncomingNotification(note);
+          } catch (e) {
+            debugPrint("❌ [SocialStream] 解析错误: $e");
           }
         });
   }

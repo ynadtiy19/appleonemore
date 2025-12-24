@@ -1,6 +1,7 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'dart:math' as math;
 
 import '../controllers/auth_controller.dart';
 import '../services/db_service.dart';
@@ -16,82 +17,75 @@ class SplashPage extends StatefulWidget {
   State<SplashPage> createState() => _SplashPageState();
 }
 
-class _SplashPageState extends State<SplashPage>
-    with TickerProviderStateMixin {
-  // 背景水墨动画控制器
+class _SplashPageState extends State<SplashPage> with TickerProviderStateMixin {
+  // 背景意境动画控制器
   late AnimationController _bgController;
 
-  // Logo 浮动动画控制器
-  late AnimationController _floatController;
+  // 标志物摆动与缩放控制器（模拟微风中的叶子）
+  late AnimationController _swayController;
 
-  // 文本进场动画控制器
-  late AnimationController _textController;
+  // 文字与元素显影控制器
+  late AnimationController _fadeController;
 
   @override
   void initState() {
     super.initState();
 
-    // 1. 背景水墨流动动画
+    // 1. 背景意境动画：平缓的水墨流动
     _bgController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 5),
+    )..repeat(reverse: true);
+
+    // 2. 标志物：模拟自然中的摇曳感与呼吸感
+    _swayController = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 4),
     )..repeat(reverse: true);
 
-    // 2. Logo 呼吸/浮动效果
-    _floatController = AnimationController(
+    // 3. 元素进场：柔和的缩放与淡入
+    _fadeController = AnimationController(
       vsync: this,
-      duration: const Duration(seconds: 3),
-    )..repeat(reverse: true);
-
-    // 3. 文本错落进场
-    _textController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1500),
+      duration: const Duration(milliseconds: 2000),
     );
 
-    // 启动文本动画
-    Future.delayed(const Duration(milliseconds: 500), () {
-      if (mounted) _textController.forward();
+    // 延时启动进场动画
+    Future.delayed(const Duration(milliseconds: 300), () {
+      if (mounted) _fadeController.forward();
     });
 
     _initApp();
   }
 
-  // 在这里进行静默加载，同时 UI 已经在渲染
+  // --- 完整保留初始化逻辑 ---
   Future<void> _initApp() async {
     final startTime = DateTime.now();
 
     // 异步初始化所有服务
     await Get.putAsync(() => StorageService().init());
     await Get.putAsync(() => DbService().init());
-    // await Get.putAsync(() => AtChatService().init());
 
     debugPrint("📦 [System] 开始初始化服务...");
 
-    // 3. 初始化前端聊天服务 (UI线程用: @gemini2banana)
+    // 初始化前端聊天服务
     await Get.putAsync(() => FrontendChatService().init());
-
-    // 此时 UI 线程已经准备好
-    // 4. 🚀 启动后台隔离线程 (后台用: @dolphin9interim)
-    // 这将开启一个新的线程，拥有独立的 DbService 和 BackendRelayService
-    // await BackgroundRunner.startService();
 
     debugPrint("✅ [System] 所有服务初始化完成");
 
     final authC = Get.put(AuthController());
     await authC.checkAutoLogin();
 
-    // 确保启动页至少显示 2.5 秒，保证意境完整性
+    // 确保启动页显示时间，保证意境完整性
     final elapsed = DateTime.now().difference(startTime);
-    if (elapsed < const Duration(milliseconds: 2500)) {
-      await Future.delayed(const Duration(milliseconds: 2500) - elapsed);
+    if (elapsed < const Duration(milliseconds: 3500)) {
+      await Future.delayed(const Duration(milliseconds: 3500) - elapsed);
     }
 
     if (mounted) {
       Get.off(
-            () => const AuthPage(),
+        () => const AuthPage(),
         transition: Transition.fadeIn,
-        duration: const Duration(milliseconds: 800),
+        duration: const Duration(milliseconds: 1000),
       );
     }
   }
@@ -99,23 +93,24 @@ class _SplashPageState extends State<SplashPage>
   @override
   void dispose() {
     _bgController.dispose();
-    _floatController.dispose();
-    _textController.dispose();
+    _swayController.dispose();
+    _fadeController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    // 定义淡雅的自然色调
-    const Color paperBg = Color(0xFFFBFBFC); // 宣纸白
-    const Color textDark = Color(0xFF2C3E50); // 墨色
-    const Color accentGreen = Color(0xFFA8C8A6); // 淡雅的鼠尾草绿，呼应Logo
+    // 重新定义色调：黛青、云松、烟墨
+    const Color bgPaper = Color(0xFFF2F4F1); // 烟云灰白
+    const Color inkPrimary = Color(0xFF1A1A1A); // 深潭墨色
+    const Color pineGreen = Color(0xFF5D7268); // 云松黛绿
+    const Color leafLight = Color(0xFF8DA399); // 溪水淡青
 
     return Scaffold(
-      backgroundColor: paperBg,
+      backgroundColor: bgPaper,
       body: Stack(
         children: [
-          // 1. 背景动态意境 (保留原有的 Painter)
+          // 1. 背景动态意境
           AnimatedBuilder(
             animation: _bgController,
             builder: (context, child) {
@@ -126,48 +121,54 @@ class _SplashPageState extends State<SplashPage>
             },
           ),
 
-          // 2. 主体内容
+          // 2. 核心视觉内容
           Center(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                // ---------------- LOGO 区域 ----------------
+                // ---------------- 标志物区域 ----------------
                 AnimatedBuilder(
-                  animation: _floatController,
+                  animation: _swayController,
                   builder: (context, child) {
-                    // 使用正弦曲线制造轻微的上下浮动感，如叶子漂浮
-                    final double offsetY = math.sin(_floatController.value * math.pi) * 8;
-                    final double scale = 1.0 + (_floatController.value * 0.03);
+                    final double rotation =
+                        math.sin(_swayController.value * math.pi) * 0.05;
+                    final double scale =
+                        1.0 +
+                        (math.sin(_swayController.value * math.pi) * 0.04);
 
-                    return Transform.translate(
-                      offset: Offset(0, offsetY),
-                      child: Transform.scale(
-                        scale: scale,
-                        child: Container(
-                          width: 120, // 稍微加大尺寸以展示图片细节
-                          height: 120,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle, // 改为圆形背景更符合自然意境
-                            color: Colors.white,
-                            boxShadow: [
-                              BoxShadow(
-                                color: accentGreen.withOpacity(0.2), // 绿色光晕
-                                blurRadius: 40,
-                                spreadRadius: 5,
-                                offset: const Offset(0, 10),
+                    return FadeTransition(
+                      opacity: CurvedAnimation(
+                        parent: _fadeController,
+                        curve: const Interval(0.0, 0.5, curve: Curves.easeIn),
+                      ),
+                      child: Transform.rotate(
+                        angle: rotation,
+                        child: Transform.scale(
+                          scale: scale,
+                          child: Container(
+                            width: 110,
+                            height: 110,
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(
+                                20,
+                              ), // 👈 正方形圆角
+                              boxShadow: [
+                                BoxShadow(
+                                  color: pineGreen.withOpacity(0.15),
+                                  blurRadius: 30,
+                                  spreadRadius: 2,
+                                ),
+                                BoxShadow(
+                                  color: inkPrimary.withOpacity(0.02),
+                                  blurRadius: 10,
+                                  offset: const Offset(0, 5),
+                                ),
+                              ],
+                              image: const DecorationImage(
+                                image: AssetImage('images/playstore.png'),
+                                fit: BoxFit.cover, // 👈 关键：填满且裁剪
                               ),
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.03),
-                                blurRadius: 10,
-                                spreadRadius: 0,
-                                offset: const Offset(0, 4),
-                              ),
-                            ],
-                          ),
-                          padding: const EdgeInsets.all(24.0), // 图片留白
-                          child: Image.asset(
-                            'images/playstore.png',
-                            fit: BoxFit.contain,
+                            ),
                           ),
                         ),
                       ),
@@ -175,114 +176,114 @@ class _SplashPageState extends State<SplashPage>
                   },
                 ),
 
-                const SizedBox(height: 50),
+                const SizedBox(height: 60),
 
-                // ---------------- 主标题：观笔自然 ----------------
-                // 使用 Slide + Fade 组合动画
-                SlideTransition(
-                  position: Tween<Offset>(
-                    begin: const Offset(0, 0.5),
-                    end: Offset.zero,
-                  ).animate(CurvedAnimation(
-                    parent: _textController,
-                    curve: const Interval(0.0, 0.6, curve: Curves.easeOutCubic),
-                  )),
-                  child: FadeTransition(
-                    opacity: Tween<double>(begin: 0.0, end: 1.0).animate(
+                // ---------------- 主标题 ----------------
+                FadeTransition(
+                  opacity: CurvedAnimation(
+                    parent: _fadeController,
+                    curve: const Interval(0.3, 0.8, curve: Curves.easeIn),
+                  ),
+                  child: ScaleTransition(
+                    scale: Tween<double>(begin: 0.95, end: 1.0).animate(
                       CurvedAnimation(
-                        parent: _textController,
-                        curve: const Interval(0.0, 0.6, curve: Curves.easeOut),
+                        parent: _fadeController,
+                        curve: const Interval(0.3, 0.8, curve: Curves.easeIn),
                       ),
                     ),
                     child: const Text(
                       '观笔自然',
                       style: TextStyle(
-                        fontSize: 32, // 字体稍大
-                        fontWeight: FontWeight.w300,
-                        letterSpacing: 12, // 宽字间距，营造空灵感
-                        color: textDark,
-                        fontFamily: "Serif", // 如果有宋体或衬线体效果更佳
+                        fontSize: 34,
+                        fontWeight: FontWeight.w200,
+                        letterSpacing: 14,
+                        color: inkPrimary,
+                        fontFamily: "Serif",
                       ),
                     ),
                   ),
                 ),
 
-                const SizedBox(height: 20),
+                const SizedBox(height: 25),
 
-                // ---------------- 副标题：英文 ----------------
-                SlideTransition(
-                  position: Tween<Offset>(
-                    begin: const Offset(0, 0.5),
-                    end: Offset.zero,
-                  ).animate(CurvedAnimation(
-                    parent: _textController,
-                    curve: const Interval(0.3, 0.9, curve: Curves.easeOutCubic),
-                  )),
-                  child: FadeTransition(
-                    opacity: Tween<double>(begin: 0.0, end: 1.0).animate(
-                      CurvedAnimation(
-                        parent: _textController,
-                        curve: const Interval(0.3, 0.9, curve: Curves.easeOut),
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(width: 20, height: 1, color: accentGreen),
-                        const SizedBox(width: 10),
-                        Text(
-                          'OBSERVE THE BRUSH • RETURN TO NATURE',
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w500,
-                            letterSpacing: 3,
-                            color: textDark.withOpacity(0.5),
-                          ),
+                // ---------------- 副标题 ----------------
+                FadeTransition(
+                  opacity: CurvedAnimation(
+                    parent: _fadeController,
+                    curve: const Interval(0.5, 1.0, curve: Curves.easeIn),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _buildDecorativeLine(pineGreen, true),
+                      const SizedBox(width: 15),
+                      const Text(
+                        '以心观尘 · 笔墨入境',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w400,
+                          letterSpacing: 6,
+                          color: pineGreen,
                         ),
-                        const SizedBox(width: 10),
-                        Container(width: 20, height: 1, color: accentGreen),
-                      ],
-                    ),
+                      ),
+                      const SizedBox(width: 15),
+                      _buildDecorativeLine(pineGreen, false),
+                    ],
                   ),
                 ),
               ],
             ),
           ),
 
-          // 3. 底部加载提示 (淡入)
+          // 3. 底部加载意境
           Positioned(
-            bottom: 60,
+            bottom: 70,
             left: 0,
             right: 0,
             child: FadeTransition(
-              opacity: Tween<double>(begin: 0.0, end: 1.0).animate(
-                CurvedAnimation(
-                  parent: _textController,
-                  curve: const Interval(0.6, 1.0, curve: Curves.easeOut),
-                ),
+              opacity: CurvedAnimation(
+                parent: _fadeController,
+                curve: const Interval(0.7, 1.0, curve: Curves.easeIn),
               ),
               child: Center(
                 child: Column(
                   children: [
-                    // 一个极小的加载指示器，颜色与主题融合
-                    SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 1.5,
-                        valueColor: AlwaysStoppedAnimation<Color>(
-                            Colors.grey.withOpacity(0.3)
-                        ),
-                      ),
+                    // 自定义中式简约加载点
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: List.generate(3, (index) {
+                        return AnimatedBuilder(
+                          animation: _swayController,
+                          builder: (context, child) {
+                            final delay = index * 0.2;
+                            final dotOpacity =
+                                (math.sin(
+                                      (_swayController.value * 2 * math.pi) +
+                                          delay,
+                                    ) +
+                                    1) /
+                                2;
+                            return Container(
+                              margin: const EdgeInsets.symmetric(horizontal: 4),
+                              width: 3,
+                              height: 3,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: inkPrimary.withOpacity(dotOpacity * 0.3),
+                              ),
+                            );
+                          },
+                        );
+                      }),
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 15),
                     Text(
                       '万物静观皆自得',
                       style: TextStyle(
-                        fontSize: 12,
-                        fontStyle: FontStyle.italic,
-                        color: Colors.grey.withOpacity(0.6),
-                        letterSpacing: 4,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w300,
+                        color: pineGreen.withOpacity(0.7),
+                        letterSpacing: 5,
                       ),
                     ),
                   ],
@@ -294,4 +295,24 @@ class _SplashPageState extends State<SplashPage>
       ),
     );
   }
+
+  // 装饰性线条组件
+  Widget _buildDecorativeLine(Color color, bool isLeft) {
+    return Container(
+      width: 25,
+      height: 0.5,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: isLeft
+              ? [color.withOpacity(0), color]
+              : [color, color.withOpacity(0)],
+        ),
+      ),
+    );
+  }
+}
+
+// 曲线扩展，用于更平滑的进场效果
+extension on Curves {
+  static const Curve outProposed = Cubic(0.2, 0.0, 0.0, 1.0);
 }

@@ -1,4 +1,4 @@
-import 'dart:async'; // 引入异步支持
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -11,8 +11,9 @@ import 'package:intl/intl.dart';
 
 import '../controllers/home_controller.dart';
 import '../models/post_model.dart';
-import '../services/api_service.dart';
 import '../services/db_service.dart';
+import '../services/frontend_chat_service.dart';
+import '../services/quill_translation_service.dart';
 import '../services/storage_service.dart';
 import 'user_profile_page.dart';
 
@@ -43,16 +44,32 @@ class _PostDetailPageState extends State<PostDetailPage>
   bool isShowingTranslation = false;
   quill.Delta? _originalDelta;
 
+  bool _isSendingComment = false; // 新增：控制评论发送状态
+
   // 支持的语言列表
   final Map<String, String> _supportedLanguages = {
-    "zh-CN": "简体中文",
-    "en": "English",
-    "ja": "日本語",
-    "ko": "한국어",
-    "fr": "Français",
-    "de": "Deutsch",
-    "es": "Español",
-    "ru": "Русский",
+    // === 第一梯队：全球通用 / 联合国官方语言 ===
+    "en": "英语", // 北美、欧洲、大洋洲、全球通用
+    "zh-CN": "简体中文", // 亚洲（中国大陆、新加坡）
+    "zh-TW": "繁体中文", // 亚洲（港澳台）
+    "es": "西班牙语", // 南美洲（除巴西外）、欧洲（西班牙）、北美
+    "ar": "阿拉伯语", // 中东、北非（非洲重要语言）
+    "fr": "法语", // 欧洲、非洲（西非/中非通用语）、加拿大
+    "ru": "俄语", // 东欧、中亚（欧亚大陆桥梁）
+    // === 第二梯队：洲际大国语言 ===
+    "pt": "葡萄牙语", // 南美洲（巴西）、欧洲、非洲（安哥拉等）
+    "de": "德语", // 欧洲（经济核心区）
+    "ja": "日语", // 亚洲（东亚经济强国）
+    "hi": "印地语", // 亚洲（南亚人口大国）
+    "id": "印尼语", // 亚洲（东南亚人口大国）
+    // === 第三梯队：区域重要语言 ===
+    "ko": "韩语", // 亚洲（流行文化）
+    "it": "意大利语", // 欧洲（文化艺术）
+    "tr": "土耳其语", // 跨欧亚
+    "vi": "越南语", // 亚洲（新兴市场）
+    "th": "泰语", // 亚洲（东南亚旅游）
+    "nl": "荷兰语", // 欧洲
+    "pl": "波兰语", // 欧洲
   };
 
   @override
@@ -131,11 +148,24 @@ class _PostDetailPageState extends State<PostDetailPage>
       Get.snackbar("提示", "请先登录");
       return;
     }
+    // 记录操作前的状态，用于判断是否是“新增点赞”
+    bool isActionLike = !isLiked;
+
     setState(() {
       isLiked = !isLiked;
       likeCount += isLiked ? 1 : -1;
     });
     await _db.toggleLike(widget.postId, uid);
+    if (isActionLike && _post != null && _post!.userId != uid) {
+      final chatService = Get.find<FrontendChatService>();
+      chatService.sendSocialNotification(
+        postId: widget.postId,
+        postTitle: _post!.title,
+        creatorId: _post!.userId,
+        creatorName: _post!.authorName, // 确保 Post 模型中有作者的 atsign
+        type: 'LIKE',
+      );
+    }
   }
 
   Future<bool> _onWillPop() async {
@@ -147,16 +177,44 @@ class _PostDetailPageState extends State<PostDetailPage>
   }
 
   void _sendComment() async {
-    if (_commentC.text.trim().isEmpty) return;
+    final commentText = _commentC.text.trim();
+    if (commentText.isEmpty || _isSendingComment) return; // 如果正在发送，直接返回
+
     final uid = _storage.getUserId();
     if (uid == null) {
       Get.snackbar("提示", "请先登录");
       return;
     }
-    await _db.addComment(widget.postId, uid, _commentC.text);
-    _commentC.clear();
-    FocusScope.of(context).unfocus();
-    _loadComments();
+
+    setState(() => _isSendingComment = true);
+
+    try {
+      // 1. 本地存库
+      await _db.addComment(widget.postId, uid, commentText);
+
+      // 2. 发送通知
+      if (_post != null && _post!.userId != uid) {
+        Get.find<FrontendChatService>().sendSocialNotification(
+          postId: widget.postId,
+          postTitle: _post!.title,
+          creatorId: _post!.userId,
+          creatorName: _post!.authorName,
+          type: 'COMMENT',
+          commentContent: commentText,
+        );
+      }
+
+      // 3. UI 清理
+      _commentC.clear();
+      FocusScope.of(context).unfocus();
+      _loadComments();
+    } catch (e) {
+      Get.snackbar("错误", "评论发送失败，请重试");
+    } finally {
+      if (mounted) {
+        setState(() => _isSendingComment = false);
+      }
+    }
   }
 
   // ================= 翻译逻辑 (核心修复) =================
@@ -194,103 +252,30 @@ class _PostDetailPageState extends State<PostDetailPage>
     setState(() => isTranslating = true);
 
     try {
-      // 1. 提取原文中的纯文本段落，记录结构
-      // 使用分隔符来区分段落，避免翻译API合并文本导致结构丢失
-      // 分隔符选用一个生僻字符串，防止与正文冲突
-      const String separator = "\n|||\n";
+      // 使用服务类进行翻译
+      final QuillTranslationService translationService =
+          QuillTranslationService();
 
-      List<quill.Operation> originalOps = _originalDelta!.toList();
-      List<String> textSegments = [];
-      List<int> textIndices = []; // 记录哪些 op 是文本
+      // 核心调用：只需一行代码，自动处理所有 Encode/Decode 逻辑
+      final quill.Delta translatedDelta = await translationService
+          .translateDelta(_originalDelta!, targetLang);
 
-      for (int i = 0; i < originalOps.length; i++) {
-        final op = originalOps[i];
-        if (op.data is String) {
-          String text = op.data as String;
-          // 忽略纯粹的换行符，除非它是唯一的结构
-          if (text.trim().isNotEmpty || text == '\n') {
-            textSegments.add(text);
-            textIndices.add(i);
-          }
-        }
-      }
-
-      // 如果没有文字，直接返回
-      if (textSegments.isEmpty) {
-        throw Exception("没有可翻译的文本");
-      }
-
-      // 2. 拼接文本发送给 API
-      String textToTranslate = textSegments.join(separator);
-      final result = await ApiService.translate(textToTranslate, targetLang);
-
-      if (result == null || result.text.isEmpty) {
-        throw Exception("翻译返回为空");
-      }
-
-      // 3. 将翻译结果拆回段落
-      // 注意：部分翻译API可能会吃掉分隔符或者修改它，这里需要做容错
-      // 这里假设 ApiService 返回的是包含分隔符的字符串
-      List<String> translatedSegments = result.text.split(separator.trim());
-
-      // 如果拆分后的数量不对，尝试用另一种方式拆分或者直接作为全文
-      // 容错策略：如果结构完全乱了，就回退到 "译文全文 + 底部所有图片" 的模式
-      bool structureBroken = translatedSegments.length != textSegments.length;
-
-      quill.Delta newDelta = quill.Delta();
-
-      if (!structureBroken) {
-        // --- 方案 A: 完美还原模式 ---
-        int textCounter = 0;
-        for (int i = 0; i < originalOps.length; i++) {
-          final op = originalOps[i];
-          if (op.data is String) {
-            // 是文本，替换为译文
-            // 只有当我们在提取时记录了这个op，才进行替换
-            if (textCounter < translatedSegments.length &&
-                (op.data as String).trim().isNotEmpty) {
-              newDelta.insert(translatedSegments[textCounter], op.attributes);
-              textCounter++;
-            } else {
-              // 保留原来的换行符等微小结构
-              newDelta.insert(op.data, op.attributes);
-            }
-          } else {
-            // 是图片/视频，原样保留！
-            newDelta.insert(op.data, op.attributes);
-          }
-        }
-      } else {
-        // --- 方案 B: 容错模式 (译文 + 图片追加在底部) ---
-        // 插入全部译文
-        newDelta.insert(result.text.replaceAll("|||", "\n"));
-        newDelta.insert("\n\n");
-
-        // 遍历提取所有图片，追加在后面
-        for (var op in originalOps) {
-          if (op.data is! String) {
-            newDelta.insert(op.data, op.attributes);
-            newDelta.insert("\n");
-          }
-        }
-      }
-
-      // 4. 更新控制器
+      // 更新控制器
       setState(() {
         _readC = quill.QuillController(
-          document: quill.Document.fromDelta(newDelta),
+          document: quill.Document.fromDelta(translatedDelta),
           selection: const TextSelection.collapsed(offset: 0),
           readOnly: true,
         );
         isShowingTranslation = true;
       });
 
-      Get.snackbar(
-        "翻译成功",
-        "已切换至 ${_supportedLanguages[targetLang]}",
-        backgroundColor: Colors.green.withOpacity(0.1),
-        colorText: Colors.green[800],
-      );
+      // Get.snackbar(
+      //   "翻译成功",
+      //   "已切换至 ${_supportedLanguages[targetLang]}",
+      //   backgroundColor: Colors.green.withOpacity(0.1),
+      //   colorText: Colors.green[800],
+      // );
     } catch (e) {
       Get.snackbar("翻译失败", e.toString());
       print("Translation Error: $e");
@@ -673,10 +658,22 @@ class _PostDetailPageState extends State<PostDetailPage>
             ),
             const SizedBox(width: 12),
             IconButton.filled(
-              onPressed: _sendComment,
-              icon: const Icon(Icons.arrow_upward_rounded),
+              onPressed: _isSendingComment ? null : _sendComment,
+              icon: _isSendingComment
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Icon(Icons.arrow_upward_rounded),
               style: IconButton.styleFrom(
                 backgroundColor: theme.primaryColor,
+                disabledBackgroundColor: theme.primaryColor.withOpacity(
+                  0.6,
+                ), // 禁用时的颜色
                 elevation: 0,
               ),
             ),
