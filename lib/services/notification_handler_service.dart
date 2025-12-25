@@ -47,10 +47,18 @@ class NotificationHandlerService extends GetxService {
           requestSoundPermission: true,
         );
 
+    const WindowsInitializationSettings initializationSettingsWindows =
+        WindowsInitializationSettings(
+          appName: '观笔自然',
+          appUserModelId: 'com.example.appleonemore', // 建议使用反域名
+          guid: 'f3a9c4b2-8d7e-4c61-9f2e-6e5a8b1d3c47', // UUID v4
+        );
+
     const InitializationSettings initializationSettings =
         InitializationSettings(
           android: initializationSettingsAndroid,
           iOS: initializationSettingsDarwin,
+          windows: initializationSettingsWindows, // 👈 关键
         );
 
     await _notificationsPlugin.initialize(

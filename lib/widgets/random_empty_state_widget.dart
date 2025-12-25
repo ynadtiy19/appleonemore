@@ -42,8 +42,8 @@ class _RandomEmptyStateWidgetState extends State<RandomEmptyStateWidget> {
                   width:
                       screenWidth(context) *
                       0.725 *
-                      0.5, // 注意：原代码外层是 /2，内层是 *0.725，这里为了适配比例做了调整
-                  height: screenWidth(context) * 0.725 * 0.5,
+                      0.8, // 注意：原代码外层是 /2，内层是 *0.725，这里为了适配比例做了调整
+                  height: screenWidth(context) * 0.725 * 0.8,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     image: DecorationImage(

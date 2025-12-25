@@ -14,7 +14,7 @@ import '../services/frontend_chat_service.dart';
 import '../services/storage_service.dart';
 import '../widgets/ChatBubble.dart';
 import '../widgets/chat_input_widget.dart';
-import 'chat_list_page.dart';
+import 'chat_page.dart' hide ChatBubble, ChatInputWidget;
 import 'user_profile_page.dart'; // ✅ 引入用户个人主页
 
 // --- 群聊控制器 ---
@@ -221,10 +221,10 @@ class _GroupChatPageState extends State<GroupChatPage> {
           onPressed: () {
             Navigator.push(
               context,
-              MaterialPageRoute(builder: (context) => const ChatListPage()),
+              MaterialPageRoute(builder: (context) => const ChatPage()),
             );
           },
-          tooltip: '私信列表',
+          tooltip: 'Ai聊天列表',
         ),
       ],
     );

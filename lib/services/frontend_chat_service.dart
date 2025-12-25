@@ -13,6 +13,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:uuid/uuid.dart';
 import 'package:version/version.dart';
 
+import '../models/AiRequestModel.dart';
 import '../models/chat_msg_model.dart';
 import '../models/social_notification_model.dart';
 import 'db_service.dart';
@@ -22,6 +23,7 @@ import 'storage_service.dart';
 class FrontendChatService extends GetxService {
   static const String myAtsign = '@gemini2banana';
   static const String toAtsign = '@dolphin9interim';
+  static const String aiServerAtsign = '@absolute3140';
   static const String nameSpace = 'atsign';
   static const String rootDomain = 'root.atsign.org';
   static const String groupConversationId = 'GROUP_GLOBAL'; // 群聊标识
@@ -41,11 +43,17 @@ class FrontendChatService extends GetxService {
   final Rxn<ChatMsgModel> incomingGroupMessage =
       Rxn<ChatMsgModel>(); // 🔥 新增群消息监听
 
+  // 🔥 [AI] 新增 AI 响应监听变量
+  final Rxn<AiResponseModel> incomingAiResponse = Rxn<AiResponseModel>();
+
   final RxMap<int, bool> userOnlineStatus = <int, bool>{}.obs;
   Timer? _heartbeatTimer;
 
   // 🔥 修改 1: 将 atClient 声明为类的成员变量，以便全局访问
   AtClient? _atClient;
+
+  // 🔥 新增：持有通知服务的订阅
+  StreamSubscription<dynamic>? _monitorSubscription;
 
   Future<FrontendChatService> init() async {
     if (Platform.isAndroid) {
@@ -121,6 +129,72 @@ class FrontendChatService extends GetxService {
       }
     } catch (e) {
       debugPrint("Auth Error: $e");
+    }
+  }
+
+  // =========================================================
+  // 🔥 [AI] AI 聊天相关函数
+  // =========================================================
+
+  /// 发送 AI 聊天请求
+  /// [content]: 当前用户输入
+  /// [history]: 历史聊天记录 [{"role": "user", "parts": [{"text": "..."}]}, ...]
+  /// [customApiKey]: (可选) 用户自行上传的 Key
+  Future<bool> sendAiMessage({
+    required String content,
+    List<Map<String, dynamic>> history = const [],
+    String? customApiKey,
+  }) async {
+    if (_atClient == null) {
+      debugPrint("❌ [Frontend] 未认证，无法发送 AI 消息");
+      return false;
+    }
+
+    final myId = _storage.getUserId();
+    final myName = _storage.getUserName();
+    final myAvatar = _storage.getUserAvatar();
+
+    if (myId == null) return false;
+
+    final aiRequest = AiRequestModel(
+      requestId: myId.toString(),
+      text: content,
+      senderId: myId.toString(),
+      senderName: myName,
+      senderAvatar: myAvatar,
+      history: history,
+      userApiKey: customApiKey,
+    );
+
+    // 2. 构造 AtKey (通知给 Server)
+    // Key 格式: ai_query.atsign@serverAtsign
+    final metaData = Metadata()
+      ..isPublic = false
+      ..isEncrypted = true
+      ..ttr = -1
+      ..namespaceAware = true;
+
+    final key = AtKey()
+      ..key = 'ai_query'
+      ..sharedBy = myAtsign
+      ..sharedWith = aiServerAtsign
+      ..namespace = nameSpace
+      ..metadata = metaData;
+
+    try {
+      debugPrint("🤖 [Frontend] 正在请求 AI...");
+      await _atClient!.notificationService.notify(
+        NotificationParams.forUpdate(
+          key,
+          value: jsonEncode(aiRequest.toJson()),
+        ),
+        checkForFinalDeliveryStatus: false,
+        waitForFinalDeliveryStatus: false,
+      );
+      return true;
+    } catch (e) {
+      debugPrint("❌ [Frontend] AI 请求发送失败: $e");
+      return false;
     }
   }
 
@@ -277,106 +351,111 @@ class FrontendChatService extends GetxService {
 
   // --- 监听逻辑 ---
   void _startFrontendMonitor(AtClient atClient) {
-    String regexattalk = 'attalk.$nameSpace@';
-    String regexatsocial = 'atsocial.$nameSpace@';
+    String combinedRegex = '(attalk|atsocial|ai_reply).*\\.$nameSpace@';
 
-    atClient.notificationService
-        .subscribe(regex: regexattalk, shouldDecrypt: true)
+    debugPrint("🎧 [Frontend] 开始监听所有通道: $combinedRegex");
+
+    _monitorSubscription = atClient.notificationService
+        .subscribe(regex: combinedRegex, shouldDecrypt: true)
         .listen((notification) async {
           String? jsonVal = notification.value;
-          debugPrint("📩 [Frontend] 收到消息: $jsonVal");
-          // //使用土司显示出来
-          // Get.showSnackbar(
-          //   GetSnackBar(message: jsonVal, duration: Duration(seconds: 3)),
-          // );
           if (jsonVal == null) return;
 
-          try {
-            Map<String, dynamic> payload = jsonDecode(jsonVal);
-            ChatMsgModel msg = ChatMsgModel.fromMap(payload);
+          // 获取 Key 的前缀部分
+          // 示例 Key: ai_reply.10086.atsign@gemini2banana
+          String fullKey = notification.key;
+          String keyType = '';
 
-            // 🔥 2. 获取消息 ID
-            String? msgId = msg.id;
-
-            // 🔥 3. 执行去重检查
-            if (_deduplicator.isDuplicate(msgId)) {
-              debugPrint("🛡️ [Frontend] 拦截到重复消息，ID: $msgId");
-              return;
-            }
-
-            int? myId = _storage.getUserId();
-            if (myId == null) return;
-
-            if (msg.senderId != myId) {
-              // 🔥 判定是否为群聊消息
-              if (msg.conversationId == groupConversationId) {
-                debugPrint("👥 [Frontend] 收到群聊消息: ${msg.content}");
-
-                // 1. 存入群聊表
-                // await _db.saveGroupMessage(msg);
-                // 2. 触发群聊监听
-                incomingGroupMessage.value = msg;
-                return;
-              }
-
-              // --- 以下是单聊逻辑 ---
-              if (msg.type == 99 && msg.content == 'PING') {
-                _sendHeartbeatAck(msg.senderId, msg.senderName);
-                userOnlineStatus[msg.senderId] = true;
-                return;
-              }
-
-              if (msg.type == 99 && msg.content == 'ACK') {
-                userOnlineStatus[msg.senderId] = true;
-                return;
-              }
-
-              debugPrint("📩 [Frontend] 收到单聊消息: ${msg.content}");
-              await _db.saveMessage(msg, isIncoming: true);
-              incomingMessage.value = msg;
-            } else {
-              debugPrint("💤 [Frontend] 忽略自己发的消息");
-              // 忽略自己发的消息（回声）
-            }
-          } catch (e) {
-            debugPrint("Msg Parse Error: $e");
+          if (fullKey.contains('attalk')) {
+            keyType = 'attalk';
+          } else if (fullKey.contains('atsocial')) {
+            keyType = 'atsocial';
+          } else if (fullKey.contains('ai_reply')) {
+            keyType = 'ai_reply';
           }
-        });
-
-    atClient.notificationService
-        .subscribe(regex: regexatsocial, shouldDecrypt: true)
-        .listen((notification) async {
-          String? jsonVal = notification.value;
-          if (jsonVal == null) return;
 
           try {
             Map<String, dynamic> payload = jsonDecode(jsonVal);
 
-            // 转换为社交通知模型
-            SocialNotificationModel note = SocialNotificationModel.fromMap(
-              payload,
-            );
+            // ============ 分支 1: AI 回复 ============
+            if (keyType == 'ai_reply') {
+              debugPrint("🤖 [Frontend] 收到 AI 回复: $payload");
+              final aiResponse = AiResponseModel.fromMap(payload);
 
-            // 1. 去重检查
-            if (_deduplicator.isDuplicate(note.id)) {
-              debugPrint("🛡️ [SocialStream] 拦截重复通知: ${note.id}");
+              final myId = _storage.getUserId().toString();
+              if (aiResponse.requestId == myId) {
+                // 3. 更新响应式变量，UI 自动刷新
+                incomingAiResponse.value = aiResponse;
+
+                // 4. (可选) 可以在这里直接存入本地数据库
+                // 构造一个 ChatMsgModel 存入本地，假装是 AI 发的消息
+                // await _saveAiMessageToLocalDb(aiResponse);
+              } else {
+                debugPrint("⚠️ 收到了不属于当前用户的 AI 回复 (ID mismatch)");
+              }
               return;
             }
 
-            // 2. 排除自己（多端同步情况）
-            int? myId = _storage.getUserId();
-            if (myId != null && note.triggerId == myId) {
+            // ============ 分支 2: 聊天消息 (attalk) ============
+            if (keyType == 'attalk') {
+              ChatMsgModel msg = ChatMsgModel.fromMap(payload);
+              String? msgId = msg.id;
+
+              if (_deduplicator.isDuplicate(msgId)) {
+                debugPrint("❌ [Frontend] 跳过重复消息");
+                return;
+              }
+
+              int? myId = _storage.getUserId();
+              if (myId == null) return;
+
+              if (msg.senderId != myId) {
+                if (msg.conversationId == groupConversationId) {
+                  debugPrint("👥 [Frontend] 收到群聊消息: $payload");
+                  incomingGroupMessage.value = msg;
+                  return;
+                }
+
+                if (msg.type == 99 && msg.content == 'PING') {
+                  debugPrint("🏓 [Frontend] 收到心跳包: $payload");
+                  _sendHeartbeatAck(msg.senderId, msg.senderName);
+                  userOnlineStatus[msg.senderId] = true;
+                  return;
+                }
+                if (msg.type == 99 && msg.content == 'ACK') {
+                  debugPrint("🏓 [Frontend] 收到心跳包 ACK: $payload");
+                  userOnlineStatus[msg.senderId] = true;
+                  return;
+                }
+
+                await _db.saveMessage(msg, isIncoming: true);
+                incomingMessage.value = msg;
+                debugPrint("👤 [Frontend] 收到个人消息: $payload");
+              }
               return;
             }
 
-            debugPrint(
-              "🔔 [SocialStream] 收到专属流通知: ${note.type} 来自 ${note.triggerName}",
-            );
+            // ============ 分支 3: 社交通知 (atsocial) ============
+            if (keyType == 'atsocial') {
+              SocialNotificationModel note = SocialNotificationModel.fromMap(
+                payload,
+              );
 
-            // 3. 执行 UI 弹出逻辑
-            _notificationHandler.handleIncomingNotification(note);
+              debugPrint("👥 [Frontend] 收到社交通知: $payload");
+              if (_deduplicator.isDuplicate(note.id)) {
+                debugPrint("❌ [Frontend] 跳过重复消息");
+                return;
+              }
+
+              int? myId = _storage.getUserId();
+              if (myId != null && note.triggerId == myId) {
+                return;
+              }
+              _notificationHandler.handleIncomingNotification(note);
+              return;
+            }
           } catch (e) {
-            debugPrint("❌ [SocialStream] 解析错误: $e");
+            debugPrint("❌ [Frontend] 消息解析错误 ($keyType): $e");
           }
         });
   }
@@ -406,8 +485,18 @@ class FrontendChatService extends GetxService {
 
   @override
   void onClose() {
+    debugPrint(" M[Frontend] 销毁 Atsign 服务...");
+
     _heartbeatTimer?.cancel();
+
+    _monitorSubscription?.cancel();
+
     _deduplicator.clear();
+
+    isOnboarded.value = false;
+    isBackendAlive.value = false;
+    _atClient = null;
+
     super.onClose();
   }
 }

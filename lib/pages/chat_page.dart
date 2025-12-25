@@ -1,23 +1,21 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:hugeicons/hugeicons.dart';
 import 'package:image_picker/image_picker.dart';
 
-// 假设这些文件依然存在于你的项目中，保留引用
+// 请确保引入了您项目中的这些文件
+import '../models/AiRequestModel.dart';
 import '../models/sticker_model.dart';
-import '../services/api_service.dart';
+import '../services/api_service.dart'; // 用于上传图片/获取表情
+import '../services/frontend_chat_service.dart'; // 引用 FrontendChatService
+import '../services/storage_service.dart'; // 引用 StorageService
 import '../widgets/app_toast.dart';
-import '../widgets/chat_input_widget.dart';
-import 'chat_list_page.dart';
 
-// =========================================================
-// 1. 定义本地消息模型 (为云存储做准备)
-// =========================================================
 enum MessageType { text, image, sticker }
 
 class AIChatMessage {
@@ -37,7 +35,6 @@ class AIChatMessage {
     this.isSending = false,
   });
 
-  // 用于复制状态但改变某些字段
   AIChatMessage copyWith({bool? isSending}) {
     return AIChatMessage(
       id: id,
@@ -51,30 +48,138 @@ class AIChatMessage {
 }
 
 // =========================================================
-// 2. 新增 AI 聊天控制器 (替代原有的 Service)
+// 2. AI 聊天控制器
 // =========================================================
 class AIChatController extends GetxController {
-  // 消息列表（响应式）
-  final RxList<AIChatMessage> messages = <AIChatMessage>[].obs;
+  // 依赖注入 FrontendChatService
+  final FrontendChatService _chatService = Get.find<FrontendChatService>();
 
-  // GetConnect 用于网络请求
+  // 🔥 修复: 注入 StorageService 以获取 userId
+  final StorageService _storage = Get.find<StorageService>();
+
+  // 🔥 修复: 初始化 GetConnect 用于 HTTP 请求
   final GetConnect _connect = GetConnect();
 
-  // API 地址
-  static const String _apiUrl = "https://mydiumtify.globeapp.dev/chattext";
+  // 服务器地址配置 (请替换为您实际部署的 Dart Frog 地址)
+  static const String _serverBaseUrl =
+      'https://appleonemorechatwithu.globeapp.dev';
+
+  // 状态变量
+  final RxList<AIChatMessage> messages = <AIChatMessage>[].obs;
+  final RxBool isSending = false.obs;
+
+  //是否开启多轮历史对话
+  final RxBool isHistoryMode = false.obs;
+  // 是否允许发送图片/表情 (UI控制)
+  final RxBool showMediaInputs = true.obs;
 
   @override
   void onInit() {
     super.onInit();
-    // 可以在这里加载本地数据库的历史记录
-    // _loadHistoryFromDb();
+    // 监听来自 Service 的 AI 回复
+    ever(_chatService.incomingAiResponse, _handleAiResponse);
+
+    // 初始化时加载历史记录
+    loadHistory();
   }
 
-  // 发送文本消息
-  Future<void> sendTextMessage(String text) async {
-    final tempId = DateTime.now().millisecondsSinceEpoch.toString();
+  /// 加载历史记录
+  Future<void> loadHistory() async {
+    // 假设路由已经配置好，如果是直接在 onRequest 处理，则路径可能是 / 或 /ai_chat
+    // 这里假设您的 Dart Frog 路由是根路径或根据您的实际路由文件修改
+    const url = '$_serverBaseUrl/ai_chat';
 
-    // 1. 立即上屏 (本地显示)
+    try {
+      final userId = _storage.getUserId();
+      if (userId == null) return;
+
+      final response = await _connect.post(url, {
+        "action": "GET_AI_HISTORY",
+        "payload": {
+          "user_identifier": userId.toString(),
+          "limit": 50,
+          "offset": 0,
+        },
+      });
+
+      if (response.statusCode == 200) {
+        final body = response.body; // GetConnect 自动解析 JSON
+        // 确保 body 是 Map 且包含 data
+        if (body is Map && body['data'] is List) {
+          final List data = body['data'];
+
+          // 转换数据并加入 messages 列表
+          final historyMsgs = data.map((item) {
+            return AIChatMessage(
+              id: item['id'].toString(),
+              content: item['content'] ?? '',
+              isMe: item['is_user'] == 1, // 数据库存的是 1/0
+              type: MessageType.text, // 目前数据库只存了文本
+              timestamp: DateTime.parse(
+                item['created_at'],
+              ).millisecondsSinceEpoch,
+            );
+          }).toList();
+
+          // 数据库取出来如果是按时间倒序（最新的在前），则直接使用
+          // 如果是正序（最旧的在前），且 UI 是 reverse: true，则需要倒序
+          // 假设 SQL 是 ORDER BY created_at ASC，我们需要反转以适配 ListView reverse
+          messages.assignAll(historyMsgs.reversed.toList());
+        }
+      }
+    } catch (e) {
+      debugPrint("Failed to load history: $e");
+    }
+  }
+
+  /// 远程清空历史记录
+  Future<void> clearHistoryRemote() async {
+    const url = '$_serverBaseUrl/ai_chat';
+
+    try {
+      final userId = _storage.getUserId();
+      if (userId == null) return;
+
+      await _connect.post(url, {
+        "action": "DELETE_AI_HISTORY",
+        "payload": {"user_identifier": userId.toString()},
+      });
+
+      // 清空本地 UI
+      messages.clear();
+    } catch (e) {
+      debugPrint("Failed to clear history: $e");
+    }
+  }
+
+  /// 处理接收到的 AI 消息
+  void _handleAiResponse(AiResponseModel? response) {
+    if (response == null) return;
+
+    // 1. 找到对应的请求消息（通过 requestId 匹配，如果有需要更新状态的话）
+    // 这里我们直接将回复添加进列表
+    final aiMsg = AIChatMessage(
+      id: "ai_${DateTime.now().millisecondsSinceEpoch}",
+      content: response.responseText,
+      isMe: false,
+      type: MessageType.text,
+      timestamp: DateTime.now().millisecondsSinceEpoch,
+    );
+
+    messages.insert(0, aiMsg);
+
+    // 如果之前有正在发送的状态，可以在这里通过 requestId 找到并置为 false
+    isSending.value = false;
+  }
+
+  /// 发送文本消息
+  Future<void> sendTextMessage(String text) async {
+    if (text.trim().isEmpty) return;
+
+    final tempId = DateTime.now().millisecondsSinceEpoch.toString();
+    isSending.value = true;
+
+    // 1. 用户消息立即上屏
     final userMsg = AIChatMessage(
       id: tempId,
       content: text,
@@ -85,68 +190,31 @@ class AIChatController extends GetxController {
     );
     messages.insert(0, userMsg);
 
-    try {
-      // 2. 模拟存入本地数据库
-      await _saveToLocalDb(userMsg);
+    // 2. 准备历史记录 (如果开启了历史模式)
+    List<Map<String, dynamic>> history = [];
+    if (isHistoryMode.value) {
+      history = _buildHistoryForGemini();
+    }
 
-      // 更新发送状态为成功
+    // 3. 调用 Service 发送
+    // requestId 使用 tempId，方便后续匹配
+    bool success = await _chatService.sendAiMessage(
+      content: text,
+      history: history,
+      // customApiKey: "YOUR_KEY_IF_NEEDED",
+    );
+
+    if (success) {
+      // 更新消息状态为已发送 (UI上去除 loading)
       _updateMessageStatus(tempId, isSending: false);
-
-      // 3. 请求 AI 接口
-      // 编码参数
-      final response = await _connect.get(
-        "$_apiUrl?q=${Uri.encodeComponent(text)}",
-      );
-
-      if (response.statusCode == 200 && response.body != null) {
-        // 解析: {"isSender":false,"text":"..."}
-        // 注意：GetConnect 会自动尝试 decode JSON，如果 response.body 是 Map 直接用
-        final data = response.body is String
-            ? jsonDecode(response.body)
-            : response.body;
-
-        final String replyText = data['text'] ?? "AI 暂时无法回答";
-
-        // 4. AI 回复上屏
-        final aiMsg = AIChatMessage(
-          id: "ai_${DateTime.now().millisecondsSinceEpoch}",
-          content: replyText,
-          isMe: false, // data['isSender'] 也可以用，但这里肯定是 AI
-          type: MessageType.text,
-          timestamp: DateTime.now().millisecondsSinceEpoch,
-        );
-        messages.insert(0, aiMsg);
-        await _saveToLocalDb(aiMsg);
-      } else {
-        AppToast.show(
-          Get.context!,
-          message: "AI 连接失败: ${response.statusText}",
-          type: ToastType.error,
-        );
-      }
-    } catch (e) {
-      debugPrint("API Error: $e");
-      AppToast.show(Get.context!, message: "发送失败，请检查网络", type: ToastType.error);
+    } else {
+      isSending.value = false;
+      _updateMessageStatus(tempId, isSending: false);
+      AppToast.show(Get.context!, message: "发送失败，请检查连接", type: ToastType.error);
     }
   }
 
-  // 发送表情 (AI 可能无法识别，仅本地展示或发送文本描述)
-  Future<void> sendSticker(StickerItem sticker) async {
-    final msg = AIChatMessage(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
-      content: sticker.stickerUrl ?? "",
-      isMe: true,
-      type: MessageType.sticker,
-      timestamp: DateTime.now().millisecondsSinceEpoch,
-    );
-    messages.insert(0, msg);
-    await _saveToLocalDb(msg);
-
-    // 可选：发送给 AI 一个描述，让它知道你发了表情
-    // sendTextMessage("[表情]");
-  }
-
-  // 发送图片
+  /// 发送图片 (仅本地展示 + 上传，AI 暂不支持多模态输入的话仅作为记录)
   Future<void> sendImage(String imageUrl) async {
     final msg = AIChatMessage(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
@@ -156,27 +224,73 @@ class AIChatController extends GetxController {
       timestamp: DateTime.now().millisecondsSinceEpoch,
     );
     messages.insert(0, msg);
-    await _saveToLocalDb(msg);
+    // 如果 AI 支持图片，可以在这里调用 sendAiMessage 并附带 image url
   }
 
+  /// 发送表情
+  Future<void> sendSticker(StickerItem sticker) async {
+    final msg = AIChatMessage(
+      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      content: sticker.stickerUrl ?? "",
+      isMe: true,
+      type: MessageType.sticker,
+      timestamp: DateTime.now().millisecondsSinceEpoch,
+    );
+    messages.insert(0, msg);
+  }
+
+  /// 删除单条消息
+  void deleteMessage(AIChatMessage msg) {
+    messages.remove(msg);
+  }
+
+  /// 清空所有消息 (本地+远程)
   void clearMessages() {
-    messages.clear();
-    // TODO: 清空数据库
-    // _db.delete('messages');
+    // 调用远程清除
+    clearHistoryRemote();
   }
 
-  // 模拟更新消息状态
+  /// 切换历史模式
+  void toggleHistoryMode() {
+    isHistoryMode.value = !isHistoryMode.value;
+    final status = isHistoryMode.value ? "开启" : "关闭";
+    AppToast.show(Get.context!, message: "多轮对话已$status");
+  }
+
   void _updateMessageStatus(String id, {required bool isSending}) {
     final index = messages.indexWhere((m) => m.id == id);
     if (index != -1) {
       messages[index] = messages[index].copyWith(isSending: isSending);
+      messages.refresh(); // 强制刷新列表
     }
   }
 
-  // 预留：存入本地数据库
-  Future<void> _saveToLocalDb(AIChatMessage msg) async {
-    // TODO: 实现 SQLite 或 Hive 存储
-    // await DbService.insert(msg);
+  /// 构建 Gemini 格式的历史记录
+  /// 将本地 AIChatMessage 转换为 API 需要的 List<Map>
+  List<Map<String, dynamic>> _buildHistoryForGemini() {
+    // Gemini 格式: { "role": "user"|"model", "parts": [{"text": "..."}] }
+    // 注意：Gemini 对话顺序必须是 user -> model -> user -> model
+    // 且我们列表是倒序的 (index 0 是最新)，需要反转
+
+    final List<Map<String, dynamic>> history = [];
+
+    // 取最近 20 条，避免 token 超限，且排除 sticker/image
+    final validMessages = messages
+        .where((m) => m.type == MessageType.text && !m.isSending)
+        .take(20)
+        .toList()
+        .reversed // 转为正序：旧 -> 新
+        .toList();
+
+    for (var msg in validMessages) {
+      history.add({
+        "role": msg.isMe ? "user" : "model",
+        "parts": [
+          {"text": msg.content},
+        ],
+      });
+    }
+    return history;
   }
 }
 
@@ -191,13 +305,11 @@ class ChatPage extends StatefulWidget {
 }
 
 class _ChatPageState extends State<ChatPage> {
-  // 注入新的控制器
   final AIChatController controller = Get.put(AIChatController());
-
   final TextEditingController _textC = TextEditingController();
   final ScrollController _scrollC = ScrollController();
 
-  bool _isUploading = false;
+  // 表情列表状态
   List<StickerItem> _stickers = [];
 
   @override
@@ -207,85 +319,84 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   Future<void> _loadStickers() async {
-    final res = await ApiService.fetchStickers();
-    if (!mounted) return;
-    setState(() => _stickers = res);
+    // 假设 ApiService 依然可用
+    try {
+      final res = await ApiService.fetchStickers();
+      if (!mounted) return;
+      setState(() => _stickers = res);
+    } catch (e) {
+      debugPrint("Load stickers failed: $e");
+    }
   }
 
-  // 发送表情
-  Future<void> _sendSticker(StickerItem sticker) async {
-    await controller.sendSticker(sticker);
-    _scrollToBottom();
-  }
-
-  // 发送文本
-  Future<void> _sendText() async {
-    if (_textC.text.trim().isEmpty) return;
+  // 发送逻辑
+  Future<void> _handleSendText() async {
     final text = _textC.text.trim();
-    _textC.clear();
+    if (text.isEmpty) return;
 
+    _textC.clear();
     await controller.sendTextMessage(text);
     _scrollToBottom();
   }
 
-  // 发送图片
-  Future<void> _sendImage() async {
+  Future<void> _handleSendSticker(StickerItem sticker) async {
+    await controller.sendSticker(sticker);
+    _scrollToBottom();
+  }
+
+  Future<void> _handleSendImage() async {
     final picker = ImagePicker();
     final xFile = await picker.pickImage(
       source: ImageSource.gallery,
-      imageQuality: 75,
+      imageQuality: 70,
     );
     if (xFile == null) return;
 
-    if (!mounted) return;
-    setState(() => _isUploading = true);
-    AppToast.show(context, message: '正在上传图片…');
-
-    // 这里依然调用 ApiService 上传文件获取 URL
-    final url = await ApiService.uploadImage(File(xFile.path));
-
-    if (url != null) {
-      await controller.sendImage(url);
-      _scrollToBottom();
-    } else {
-      AppToast.show(context, message: '图片上传失败', type: ToastType.error);
+    AppToast.show(context, message: '正在上传图片...');
+    // 调用原有 Service 上传
+    try {
+      final url = await ApiService.uploadImage(File(xFile.path));
+      if (url != null) {
+        await controller.sendImage(url);
+        _scrollToBottom();
+      } else {
+        AppToast.show(context, message: '上传失败', type: ToastType.error);
+      }
+    } catch (e) {
+      AppToast.show(context, message: '上传出错: $e', type: ToastType.error);
     }
-
-    setState(() => _isUploading = false);
   }
 
   void _scrollToBottom() {
     if (_scrollC.hasClients) {
-      _scrollC.animateTo(
-        0,
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeOut,
-      );
+      // 稍微延迟等待列表渲染
+      Future.delayed(const Duration(milliseconds: 100), () {
+        _scrollC.animateTo(
+          0,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      });
     }
   }
 
-  // 清空聊天
-  void _clearMessages() {
+  // 清空聊天确认
+  void _confirmClearMessages() {
     showDialog(
       context: context,
       builder: (ctx) {
         return AlertDialog(
-          title: const Text('清空聊天记录'),
-          content: const Text('此操作将清空本地缓存的消息，确定吗？'),
+          title: const Text('清空记录'),
+          content: const Text('确定要清空当前所有对话记录吗？此操作将同时删除服务器端历史。'),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx),
-              child: const Text('取消'),
+              child: const Text('取消', style: TextStyle(color: Colors.grey)),
             ),
             TextButton(
               onPressed: () {
                 controller.clearMessages();
                 Navigator.pop(ctx);
-                AppToast.show(
-                  context,
-                  message: '聊天记录已清空',
-                  type: ToastType.success,
-                );
               },
               child: const Text('清空', style: TextStyle(color: Colors.red)),
             ),
@@ -303,7 +414,22 @@ class _ChatPageState extends State<ChatPage> {
       body: Column(
         children: [
           Expanded(child: _buildMessageList()),
-          _buildInputArea(),
+          // 输入区域，使用 Obx 监听 controller 状态变化
+          Obx(
+            () => ChatInputWidget(
+              controller: _textC,
+              onSend: _handleSendText,
+              onSendSticker: _handleSendSticker,
+              onImagePick: _handleSendImage,
+              stickers: _stickers,
+              isSending: controller.isSending.value,
+
+              // 🔥 新增参数绑定
+              showMediaIcons: controller.showMediaInputs.value,
+              isHistoryMode: controller.isHistoryMode.value,
+              onToggleHistory: controller.toggleHistoryMode,
+            ),
+          ),
         ],
       ),
     );
@@ -312,59 +438,51 @@ class _ChatPageState extends State<ChatPage> {
   PreferredSizeWidget _buildAppBar() {
     return AppBar(
       backgroundColor: Colors.white,
-      elevation: 0,
+      elevation: 0.5,
       foregroundColor: Colors.black87,
-      title: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'chat', // 修改标题
-            style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
-          ),
-          Row(
-            children: [
-              Container(
-                width: 8,
-                height: 8,
-                decoration: const BoxDecoration(
-                  color: Colors.green, // AI 永远在线
-                  shape: BoxShape.circle,
+      title: Obx(
+        () => Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Gemini AI',
+              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
+            ),
+            Row(
+              children: [
+                Container(
+                  width: 8,
+                  height: 8,
+                  decoration: BoxDecoration(
+                    // 如果正在发送，显示橙色，否则绿色
+                    color: controller.isSending.value
+                        ? Colors.orange
+                        : Colors.green,
+                    shape: BoxShape.circle,
+                  ),
                 ),
-              ),
-              const SizedBox(width: 6),
-              const Text(
-                '在线',
-                style: TextStyle(fontSize: 12, color: Colors.grey),
-              ),
-            ],
-          ),
-        ],
+                const SizedBox(width: 6),
+                Text(
+                  controller.isSending.value ? '思考中...' : '在线',
+                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
       actions: [
+        // 清除历史按钮
         IconButton(
           icon: const HugeIcon(
-            icon: HugeIcons.strokeRoundedComment01,
+            icon: HugeIcons.strokeRoundedDelete02,
             size: 20.0,
-            color: Colors.black,
+            color: Colors.black54,
           ),
-          onPressed: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (context) => const ChatListPage()),
-            );
-          },
-          tooltip: '好友聊天',
-        ),
-        const SizedBox(width: 8),
-        IconButton(
-          icon: const HugeIcon(
-            icon: HugeIcons.strokeRoundedDelete01,
-            size: 20.0,
-            color: Colors.black,
-          ),
-          onPressed: _clearMessages,
+          onPressed: _confirmClearMessages,
           tooltip: '清空聊天',
         ),
+        const SizedBox(width: 8),
       ],
     );
   }
@@ -372,39 +490,389 @@ class _ChatPageState extends State<ChatPage> {
   Widget _buildMessageList() {
     return Obx(() {
       final messages = controller.messages;
+      if (messages.isEmpty) {
+        return const Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              HugeIcon(
+                icon: HugeIcons.strokeRoundedAiChat02,
+                size: 48,
+                color: Colors.grey,
+              ),
+              SizedBox(height: 16),
+              Text("开始与 AI 对话吧", style: TextStyle(color: Colors.grey)),
+            ],
+          ),
+        );
+      }
 
       return ListView.builder(
         controller: _scrollC,
-        reverse: true,
+        reverse: true, // 倒序排列
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
         itemCount: messages.length,
         itemBuilder: (_, index) {
           final msg = messages[index];
-          return ChatBubble(message: msg);
+          return ChatBubble(
+            message: msg,
+            onDelete: () => controller.deleteMessage(msg),
+          );
         },
       );
     });
   }
+}
 
-  Widget _buildInputArea() {
-    return ChatInputWidget(
-      controller: _textC,
-      onSend: _sendText,
-      onSendSticker: _sendSticker,
-      onImagePick: _sendImage,
-      stickers: _stickers,
-      isSending: _isUploading,
+// =========================================================
+// 4. 增强版输入组件 (支持历史开关 & 媒体隐藏)
+// =========================================================
+class ChatInputWidget extends StatefulWidget {
+  final TextEditingController controller;
+  final VoidCallback onSend;
+  final Function(StickerItem) onSendSticker;
+  final VoidCallback onImagePick;
+  final List<StickerItem> stickers;
+  final bool isSending;
+
+  // 🔥 新增控制参数
+  final bool showMediaIcons; // 是否显示图片/表情入口
+  final bool isHistoryMode; // 是否开启历史
+  final VoidCallback onToggleHistory; // 切换历史回调
+
+  const ChatInputWidget({
+    super.key,
+    required this.controller,
+    required this.onSend,
+    required this.onSendSticker,
+    required this.onImagePick,
+    required this.stickers,
+    required this.isSending,
+    this.showMediaIcons = true,
+    required this.isHistoryMode,
+    required this.onToggleHistory,
+  });
+
+  @override
+  State<ChatInputWidget> createState() => _ChatInputWidgetState();
+}
+
+class _ChatInputWidgetState extends State<ChatInputWidget> {
+  final FocusNode _focusNode = FocusNode();
+  bool _isStickerOpen = false;
+  int _currentSetIndex = 0;
+  late PageController _pageController;
+
+  final Map<String, List<StickerItem>> _groupedStickers = {};
+  final List<String> _setIds = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _pageController = PageController();
+    _groupStickers();
+    widget.controller.addListener(_onTextChanged);
+    _focusNode.addListener(() {
+      if (_focusNode.hasFocus && _isStickerOpen) {
+        setState(() => _isStickerOpen = false);
+      }
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant ChatInputWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.stickers != widget.stickers) {
+      _groupStickers();
+    }
+  }
+
+  void _onTextChanged() => setState(() {});
+
+  void _groupStickers() {
+    _groupedStickers.clear();
+    _setIds.clear();
+    for (var item in widget.stickers) {
+      if (!_groupedStickers.containsKey(item.stickerSetId)) {
+        _groupedStickers[item.stickerSetId] = [];
+        _setIds.add(item.stickerSetId);
+      }
+      _groupedStickers[item.stickerSetId]!.add(item);
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_onTextChanged);
+    _focusNode.dispose();
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  void _toggleSticker() {
+    if (_isStickerOpen) {
+      _focusNode.requestFocus();
+    } else {
+      _focusNode.unfocus();
+      Future.delayed(const Duration(milliseconds: 150), () {
+        setState(() => _isStickerOpen = true);
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // 如果 showMediaIcons 为 false，强制关闭表情面板
+    if (!widget.showMediaIcons && _isStickerOpen) {
+      _isStickerOpen = false;
+    }
+
+    return Container(
+      color: Colors.transparent,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _buildInputBox(),
+          // 只有允许媒体输入时才渲染表情面板
+          if (widget.showMediaIcons && _isStickerOpen) _buildStickerPanel(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInputBox() {
+    final bool hasText = widget.controller.text.trim().isNotEmpty;
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.08),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+        border: Border.all(color: const Color(0xFFE0E0E0), width: 0.5),
+      ),
+      child: Column(
+        children: [
+          TextField(
+            controller: widget.controller,
+            focusNode: _focusNode,
+            maxLines: 5,
+            minLines: 1,
+            style: const TextStyle(fontSize: 16, color: Colors.black87),
+            decoration: const InputDecoration(
+              hintText: "输入消息...",
+              hintStyle: TextStyle(color: Color(0xFFAAAAAA), fontSize: 16),
+              contentPadding: EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 14,
+              ),
+              border: InputBorder.none,
+            ),
+          ),
+          const Divider(height: 1, color: Color(0xFFEEEEEE)),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+            child: Row(
+              children: [
+                // 🔥 1. 历史记录开关 (始终显示或根据需求)
+                IconButton(
+                  tooltip: widget.isHistoryMode ? "关闭连续对话" : "开启连续对话",
+                  icon: HugeIcon(
+                    icon: HugeIcons.strokeRoundedTime02, // 时钟图标
+                    size: 24,
+                    color: widget.isHistoryMode
+                        ? Colors
+                              .deepPurple // 激活状态颜色
+                        : const Color(0xFF999999), // 关闭状态颜色
+                  ),
+                  onPressed: widget.onToggleHistory,
+                ),
+
+                // 🔥 2. 媒体按钮 (根据 showMediaIcons 决定是否显示)
+                if (widget.showMediaIcons) ...[
+                  IconButton(
+                    icon: const Icon(
+                      Icons.add_circle_outline,
+                      color: Color(0xFF999999),
+                      size: 28,
+                    ),
+                    onPressed: widget.isSending ? null : widget.onImagePick,
+                  ),
+                  IconButton(
+                    icon: Icon(
+                      _isStickerOpen
+                          ? Icons.keyboard_hide_outlined
+                          : Icons.sticky_note_2_outlined,
+                      color: _isStickerOpen
+                          ? Colors.deepPurple
+                          : const Color(0xFF999999),
+                      size: 26,
+                    ),
+                    onPressed: _toggleSticker,
+                  ),
+                ],
+
+                const Spacer(),
+
+                // 🔥 3. 发送按钮
+                GestureDetector(
+                  onTap: (widget.isSending || !hasText) ? null : widget.onSend,
+                  child: Container(
+                    margin: const EdgeInsets.only(right: 8),
+                    width: 38,
+                    height: 38,
+                    alignment: Alignment.center,
+                    decoration: const BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.transparent,
+                    ),
+                    child: _buildSendIcon(hasText),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSendIcon(bool hasText) {
+    if (widget.isSending) {
+      return const SizedBox(
+        width: 18,
+        height: 18,
+        child: CircularProgressIndicator(
+          strokeWidth: 2,
+          color: Colors.blueAccent,
+        ),
+      );
+    }
+    return HugeIcon(
+      icon: HugeIcons.strokeRoundedSent,
+      size: 22,
+      color: hasText ? Colors.deepPurple : const Color(0xFFCCCCCC),
+    );
+  }
+
+  Widget _buildStickerPanel() {
+    if (_setIds.isEmpty) {
+      return Container(
+        height: 280,
+        color: const Color(0xFFF9F9F9),
+        child: const Center(
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            color: Colors.blueAccent,
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      height: 320,
+      color: const Color(0xFFF9F9F9),
+      child: Column(
+        children: [
+          Expanded(
+            child: PageView.builder(
+              controller: _pageController,
+              onPageChanged: (index) =>
+                  setState(() => _currentSetIndex = index),
+              itemCount: _setIds.length,
+              itemBuilder: (context, index) {
+                final String setId = _setIds[index];
+                final List<StickerItem> items = _groupedStickers[setId]!;
+                return GridView.builder(
+                  padding: const EdgeInsets.all(16),
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 4,
+                    mainAxisSpacing: 16,
+                    crossAxisSpacing: 16,
+                  ),
+                  itemCount: items.length,
+                  itemBuilder: (context, i) {
+                    return GestureDetector(
+                      onTap: () => widget.onSendSticker(items[i]),
+                      child: CachedNetworkImage(
+                        imageUrl: items[i].stickerUrl,
+                        fit: BoxFit.contain,
+                        placeholder: (_, __) => const Center(
+                          child: SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 1),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+          Container(
+            height: 54,
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              border: Border(top: BorderSide(color: Color(0xFFEEEEEE))),
+            ),
+            child: ListView.builder(
+              scrollDirection: Axis.horizontal,
+              itemCount: _setIds.length,
+              itemBuilder: (context, index) {
+                final bool isSelected = _currentSetIndex == index;
+                final String firstIconUrl =
+                    _groupedStickers[_setIds[index]]!.first.stickerUrl;
+                return GestureDetector(
+                  onTap: () {
+                    _pageController.animateToPage(
+                      index,
+                      duration: const Duration(milliseconds: 300),
+                      curve: Curves.easeOutQuart,
+                    );
+                  },
+                  child: Container(
+                    width: 64,
+                    alignment: Alignment.center,
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? const Color(0xFFF0F0F0)
+                          : Colors.transparent,
+                      border: Border(
+                        right: BorderSide(
+                          color: Colors.grey.withOpacity(0.1),
+                          width: 0.5,
+                        ),
+                      ),
+                    ),
+                    child: CachedNetworkImage(imageUrl: firstIconUrl),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
 
 // =========================================================
-// 4. 单条消息气泡 (根据 MessageType 渲染)
+// 5. 单条消息气泡 (支持长按删除)
 // =========================================================
 class ChatBubble extends StatelessWidget {
   final AIChatMessage message;
+  final VoidCallback onDelete; // 删除回调
 
-  const ChatBubble({super.key, required this.message});
+  const ChatBubble({super.key, required this.message, required this.onDelete});
 
   void _openImage(BuildContext context, String url) {
     Navigator.push(
@@ -419,18 +887,38 @@ class ChatBubble extends StatelessWidget {
   void _onLongPress(BuildContext context) {
     showModalBottomSheet(
       context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
       builder: (_) {
         return SafeArea(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              if (message.type == MessageType.text)
+                ListTile(
+                  leading: const HugeIcon(
+                    icon: HugeIcons.strokeRoundedCopy01,
+                    color: Colors.black87,
+                  ),
+                  title: const Text('复制文本'),
+                  onTap: () {
+                    Clipboard.setData(ClipboardData(text: message.content));
+                    Navigator.pop(context);
+                    AppToast.show(context, message: '已复制');
+                  },
+                ),
               ListTile(
-                leading: const Icon(Icons.copy),
-                title: Text(message.type == MessageType.text ? '复制文本' : '复制链接'),
+                leading: const HugeIcon(
+                  icon: HugeIcons.strokeRoundedDelete02,
+                  color: Colors.red,
+                ),
+                title: const Text('删除消息', style: TextStyle(color: Colors.red)),
                 onTap: () {
-                  Clipboard.setData(ClipboardData(text: message.content));
                   Navigator.pop(context);
-                  AppToast.show(context, message: '已复制');
+                  onDelete();
+                  AppToast.show(context, message: '已删除');
                 },
               ),
             ],
@@ -452,12 +940,15 @@ class ChatBubble extends StatelessWidget {
             : MainAxisAlignment.start,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // AI 头像
           if (!isMe) ...[
             const CircleAvatar(
               radius: 16,
               backgroundColor: Colors.indigoAccent,
-              child: Icon(Icons.smart_toy, size: 18, color: Colors.white),
+              child: HugeIcon(
+                icon: HugeIcons.strokeRoundedAiChat01,
+                size: 20,
+                color: Colors.white,
+              ),
             ),
             const SizedBox(width: 8),
           ],
@@ -508,20 +999,19 @@ class ChatBubble extends StatelessWidget {
       case MessageType.sticker:
         return ClipRRect(
           borderRadius: BorderRadius.circular(14),
-          child: Image.network(
-            message.content,
+          child: CachedNetworkImage(
+            imageUrl: message.content,
             fit: BoxFit.cover,
-            errorBuilder: (_, __, ___) =>
-                const Icon(Icons.broken_image, color: Colors.grey),
-            loadingBuilder: (_, child, p) => p == null
-                ? child
-                : const SizedBox(
-                    width: 150,
-                    height: 150,
-                    child: Center(
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                  ),
+            placeholder: (_, __) => const SizedBox(
+              width: 150,
+              height: 150,
+              child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+            ),
+            errorWidget: (_, __, ___) => const SizedBox(
+              width: 100,
+              height: 100,
+              child: Icon(Icons.broken_image, color: Colors.grey),
+            ),
           ),
         );
       case MessageType.text:
@@ -539,13 +1029,11 @@ class ChatBubble extends StatelessWidget {
 }
 
 // =========================================================
-// 5. 图片预览页 (优化手势版)
+// 6. 图片预览页
 // =========================================================
 class ImagePreviewPage extends StatefulWidget {
   final String imageUrl;
-
   const ImagePreviewPage({super.key, required this.imageUrl});
-
   @override
   State<ImagePreviewPage> createState() => _ImagePreviewPageState();
 }
@@ -556,12 +1044,8 @@ class _ImagePreviewPageState extends State<ImagePreviewPage>
       TransformationController();
   late AnimationController _animationController;
   Animation<Matrix4>? _animation;
-
-  // 拖动偏移量
   Offset _dragOffset = Offset.zero;
-  // 背景透明度
   double _bgOpacity = 1.0;
-  // 是否正在拖动关闭
   bool _isDragging = false;
 
   @override
@@ -583,60 +1067,43 @@ class _ImagePreviewPageState extends State<ImagePreviewPage>
     super.dispose();
   }
 
-  // 双击缩放逻辑
   void _onDoubleTap() {
     Matrix4 currentMatrix = _transformController.value;
     double scale = currentMatrix.getMaxScaleOnAxis();
-
     Matrix4 targetMatrix;
     if (scale > 1.0) {
-      // 缩小回 1.0
       targetMatrix = Matrix4.identity();
     } else {
-      // 放大到 2.0
       targetMatrix = Matrix4.identity()..scale(2.0);
     }
-
     _animation = Matrix4Tween(begin: currentMatrix, end: targetMatrix).animate(
       CurvedAnimation(parent: _animationController, curve: Curves.easeOut),
     );
     _animationController.forward(from: 0);
   }
 
-  // 开始拖动
   void _onVerticalDragStart(DragStartDetails details) {
-    // 只有在没有缩放（scale == 1.0）时才允许拖动关闭
     if (_transformController.value.getMaxScaleOnAxis() <= 1.01) {
-      setState(() {
-        _isDragging = true;
-      });
+      setState(() => _isDragging = true);
     }
   }
 
-  // 拖动中
   void _onVerticalDragUpdate(DragUpdateDetails details) {
     if (!_isDragging) return;
-
     setState(() {
       _dragOffset += details.delta;
-      // 随着拖动距离增加，透明度降低
-      // 300 像素完全透明
       double progress = (_dragOffset.dy.abs() / 300).clamp(0.0, 1.0);
       _bgOpacity = 1.0 - progress;
     });
   }
 
-  // 拖动结束
   void _onVerticalDragEnd(DragEndDetails details) {
     if (!_isDragging) return;
     setState(() => _isDragging = false);
-
-    // 如果拖动速度够快，或者距离够远，则关闭
     final velocity = details.primaryVelocity ?? 0;
     if (_dragOffset.dy.abs() > 100 || velocity.abs() > 500) {
       Navigator.of(context).pop();
     } else {
-      // 否则回弹
       setState(() {
         _dragOffset = Offset.zero;
         _bgOpacity = 1.0;
@@ -650,32 +1117,31 @@ class _ImagePreviewPageState extends State<ImagePreviewPage>
       backgroundColor: Colors.transparent,
       body: Stack(
         children: [
-          // 1. 背景层：监听点击退出
           Positioned.fill(
             child: GestureDetector(
               onTap: () => Navigator.of(context).pop(),
               child: Container(color: Colors.black.withOpacity(_bgOpacity)),
             ),
           ),
-
-          // 2. 图片层：处理手势
           Positioned.fill(
             child: GestureDetector(
               onDoubleTap: _onDoubleTap,
-              // 使用 VerticalDrag 处理下拉关闭，避免和 InteractiveViewer 冲突
               onVerticalDragStart: _onVerticalDragStart,
               onVerticalDragUpdate: _onVerticalDragUpdate,
               onVerticalDragEnd: _onVerticalDragEnd,
               child: Center(
                 child: Transform.translate(
-                  offset: _dragOffset, // 应用拖动偏移
+                  offset: _dragOffset,
                   child: InteractiveViewer(
                     transformationController: _transformController,
                     minScale: 1.0,
                     maxScale: 4.0,
-                    // 只有当没有正在进行"关闭拖动"时，才允许内部 Pan (缩放后的漫游)
                     panEnabled: !_isDragging,
-                    child: Image.network(widget.imageUrl, fit: BoxFit.contain),
+                    child: CachedNetworkImage(
+                      imageUrl: widget.imageUrl,
+                      fit: BoxFit.contain,
+                      placeholder: (_, __) => const CircularProgressIndicator(),
+                    ),
                   ),
                 ),
               ),

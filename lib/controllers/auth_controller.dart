@@ -95,8 +95,20 @@ class AuthController extends GetxController {
 
   void logout() async {
     int? uid = _storage.getUserId();
-    if (uid != null) await _db.updateOnlineStatus(uid, false);
+    if (uid != null) {
+      try {
+        await _db.updateOnlineStatus(uid, false);
+      } catch (e) {
+        debugPrint("通知后端下线失败: $e");
+      }
+    }
+
+    if (Get.isRegistered<FrontendChatService>()) {
+      await Get.delete<FrontendChatService>();
+    }
+
     await _storage.clear();
+
     Get.offAllNamed('/');
   }
 }
