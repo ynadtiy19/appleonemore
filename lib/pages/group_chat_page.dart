@@ -116,7 +116,13 @@ class _GroupChatPageState extends State<GroupChatPage> {
   void _goToUserProfile(int userId, String userName) {
     // 避免跳转到自己的主页 (可选，或者跳转到 ProfilePage)
     // 这里统一跳转到 UserProfilePage
-    Get.to(() => UserProfilePage(userId: userId, userName: userName));
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) =>
+            UserProfilePage(userId: userId, userName: userName),
+      ),
+    );
   }
 
   // ✅ 修改：完整的图片上传与发送逻辑

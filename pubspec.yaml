@@ -44,6 +44,10 @@ dependencies:
   flutter_secure_storage: ^10.0.0
   flutter_localization: ^0.3.3
   flutter_quill_extensions: ^11.0.0
+  gpt_markdown: ^1.1.5
+  flutter_math_fork: ^0.7.4
+  flutter_svg: ^2.2.3
+  url_launcher: ^6.3.2
 #  path: ^1.9.1
 
   cupertino_icons: ^1.0.8
@@ -61,6 +65,7 @@ dependencies:
   logging: ^1.2.0
   version: ^3.0.2
   permission_handler: ^12.0.1
+
 
   visibility_detector: ^0.4.0+2
   intl: ^0.20.2

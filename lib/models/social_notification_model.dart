@@ -1,24 +1,24 @@
 import 'dart:convert';
 
 class SocialNotificationModel {
-  final String id; // UUID 用于去重
-  final String type; // "LIKE" 或 "COMMENT"
-  final int postId;
-  final String postTitle; // 帖子摘要或标题
-  final String? postImage; // 帖子缩略图
-  final int creatorId; // 接收人ID（帖子作者）
-  final String? creatorName; // 接收人ID（帖子作者）
-  final int triggerId; // 触发人ID（点赞/评论者）
-  final String triggerName; // 触发人昵称
-  final String? triggerAvatar; // 触发人头像
-  final String? commentContent; // 如果是评论，具体的评论内容
+  final String id;
+  final String type; // "LIKE", "COMMENT", "FOLLOW" 🔥 新增 FOLLOW
+  final int postId; // 对于 FOLLOW，设为 0 或 -1
+  final String postTitle; // 对于 FOLLOW，设为空字符串
+  final String? postImage;
+  final int creatorId; // 被关注人ID (接收者)
+  final String? creatorName;
+  final int triggerId; // 发起关注的人ID
+  final String triggerName; // 发起人昵称
+  final String? triggerAvatar; // 发起人头像
+  final String? commentContent;
   final int timestamp;
 
   SocialNotificationModel({
     required this.id,
     required this.type,
-    required this.postId,
-    required this.postTitle,
+    this.postId = 0, // 🔥 默认为 0
+    this.postTitle = '', // 🔥 默认为空
     this.postImage,
     required this.creatorId,
     required this.triggerId,
@@ -42,7 +42,6 @@ class SocialNotificationModel {
       'triggerAvatar': triggerAvatar,
       'commentContent': commentContent,
       'timestamp': timestamp,
-      // 标记这是一个通知数据，区别于聊天消息
       'dataType': 'SOCIAL_NOTIFICATION',
     };
   }

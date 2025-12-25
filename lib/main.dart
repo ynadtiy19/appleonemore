@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_quill/flutter_quill.dart' as quill;
 import 'package:get/get.dart';
+import 'package:gpt_markdown/gpt_markdown.dart';
 
 import 'pages/splash_page.dart';
 import 'services/db_service.dart';
@@ -69,9 +70,45 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF6B7280), // 去掉紫色，偏中性灰蓝
-        ),
+        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF6B7280)),
+        extensions: [
+          GptMarkdownThemeData(
+            brightness: Brightness.light,
+
+            highlightColor: Colors.amber.withOpacity(0.3),
+
+            h1: const TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.bold,
+              color: Colors.black87,
+              height: 1.5,
+            ),
+            h2: const TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.w600,
+              color: Colors.black87,
+              height: 1.4,
+            ),
+            h3: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+              color: Colors.black87,
+            ),
+            h4: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+            h5: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+            h6: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: Colors.grey,
+            ),
+
+            hrLineThickness: 1.5,
+            hrLineColor: Colors.grey.shade300,
+
+            linkColor: Colors.blueAccent,
+            linkHoverColor: Colors.redAccent,
+          ),
+        ],
 
         // 👇 光标 + 选区颜色
         textSelectionTheme: const TextSelectionThemeData(

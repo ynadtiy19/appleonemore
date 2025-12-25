@@ -63,14 +63,22 @@ class HomePage extends StatelessWidget {
               return _PostListItem(
                 post: post,
                 onTap: () async {
-                  await Get.to(() => PostDetailPage(postId: post.id));
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => PostDetailPage(postId: post.id),
+                    ),
+                  );
                   c.silentUpdate();
                 },
                 onUserTap: () {
-                  Get.to(
-                    () => UserProfilePage(
-                      userId: post.userId,
-                      userName: post.authorName,
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => UserProfilePage(
+                        userId: post.userId,
+                        userName: post.authorName,
+                      ),
                     ),
                   );
                 },

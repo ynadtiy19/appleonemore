@@ -265,6 +265,56 @@ class FrontendChatService extends GetxService {
     }
   }
 
+  // --- 发送关注通知 ---
+  Future<bool> sendFollowNotification({required int targetUserId}) async {
+    if (_atClient == null) return false;
+
+    final myId = _storage.getUserId();
+    final myName = _storage.getUserName();
+    final myAvatar = _storage.getUserAvatar();
+
+    if (myId == null) return false;
+
+    final notification = SocialNotificationModel(
+      id: const Uuid().v4(),
+      type: 'FOLLOW', // 🔥 类型为 FOLLOW
+      postId: 0, // 关注与帖子无关
+      postTitle: '',
+      creatorId: targetUserId,
+      triggerId: myId,
+      triggerName: myName,
+      triggerAvatar: myAvatar,
+      timestamp: DateTime.now().millisecondsSinceEpoch,
+    );
+
+    final metaData = Metadata()
+      ..isPublic = false
+      ..isEncrypted = true
+      ..ttr = -1
+      ..namespaceAware = true;
+
+    // 复用 atsocial key，后端会自动转发
+    final key = AtKey()
+      ..key = 'atsocial'
+      ..sharedBy = myAtsign
+      ..sharedWith = toAtsign
+      ..namespace = nameSpace
+      ..metadata = metaData;
+
+    try {
+      await _atClient!.notificationService.notify(
+        NotificationParams.forUpdate(key, value: notification.toJson()),
+        checkForFinalDeliveryStatus: false,
+        waitForFinalDeliveryStatus: false,
+      );
+      debugPrint("🔔 [Frontend] 关注通知发送成功");
+      return true;
+    } catch (e) {
+      debugPrint("❌ [Frontend] 关注通知发送失败: $e");
+      return false;
+    }
+  }
+
   // --- 发送逻辑 ---
   Future<bool> sendMessage({
     required String content,

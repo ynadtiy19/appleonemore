@@ -59,14 +59,11 @@ class _EditorPageState extends State<EditorPage> {
     }
   }
 
-  // 【修复 1】更精准的属性切换逻辑
   void _toggleAttribute(quill.Attribute attribute) {
     final style = _quillC.getSelectionStyle();
     final currentAttr = style.attributes[attribute.key];
 
-    // 如果当前选区已经有这个属性，并且值也完全相同（解决 H1/H2 冲突问题）
     if (currentAttr != null && currentAttr.value == attribute.value) {
-      // 移除属性：将该 Key 的值设为 null
       _quillC.formatSelection(quill.Attribute.clone(attribute, null));
     } else {
       // 应用属性
@@ -289,6 +286,7 @@ class _EnhancedToolbar extends StatelessWidget {
             children: [
               // 图片插入
               _toolBtn(HugeIcons.strokeRoundedImage01, null, isImage: true),
+              //在这里放置一个gif请求icon，点击之后弹出下拉框用来，下拉框中用来显示刚才创建的函数返回的20条图像链接
               _vDivider(),
 
               // 基础文本格式

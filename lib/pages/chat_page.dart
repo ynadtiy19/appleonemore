@@ -4,7 +4,10 @@ import 'dart:io';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_math_fork/flutter_math.dart';
+import 'package:flutter_svg/svg.dart';
 import 'package:get/get.dart';
+import 'package:gpt_markdown/gpt_markdown.dart';
 import 'package:hugeicons/hugeicons.dart';
 import 'package:image_picker/image_picker.dart';
 
@@ -870,21 +873,24 @@ class _ChatInputWidgetState extends State<ChatInputWidget> {
 // =========================================================
 class ChatBubble extends StatelessWidget {
   final AIChatMessage message;
-  final VoidCallback onDelete; // 删除回调
+  final VoidCallback onDelete;
 
   const ChatBubble({super.key, required this.message, required this.onDelete});
 
   void _openImage(BuildContext context, String url) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => ImagePreviewPage(imageUrl: url),
-        fullscreenDialog: true,
-      ),
-    );
+    if (url.isNotEmpty) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ImagePreviewPage(imageUrl: url),
+          fullscreenDialog: true,
+        ),
+      );
+    }
   }
 
   void _onLongPress(BuildContext context) {
+    HapticFeedback.mediumImpact(); // 添加震动反馈
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.white,
@@ -902,7 +908,7 @@ class ChatBubble extends StatelessWidget {
                     icon: HugeIcons.strokeRoundedCopy01,
                     color: Colors.black87,
                   ),
-                  title: const Text('复制文本'),
+                  title: const Text('复制内容'),
                   onTap: () {
                     Clipboard.setData(ClipboardData(text: message.content));
                     Navigator.pop(context);
@@ -918,7 +924,6 @@ class ChatBubble extends StatelessWidget {
                 onTap: () {
                   Navigator.pop(context);
                   onDelete();
-                  AppToast.show(context, message: '已删除');
                 },
               ),
             ],
@@ -933,26 +938,39 @@ class ChatBubble extends StatelessWidget {
     final isMe = message.isMe;
 
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
+      padding: const EdgeInsets.symmetric(vertical: 8), // 增加一点垂直间距
       child: Row(
         mainAxisAlignment: isMe
             ? MainAxisAlignment.end
             : MainAxisAlignment.start,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // 1. AI 头像替换为 SVG
           if (!isMe) ...[
-            const CircleAvatar(
+            CircleAvatar(
               radius: 16,
-              backgroundColor: Colors.indigoAccent,
-              child: HugeIcon(
-                icon: HugeIcons.strokeRoundedAiChat01,
-                size: 20,
-                color: Colors.white,
+              backgroundColor: Colors.white,
+              child: Container(
+                clipBehavior: Clip.antiAlias,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: Colors.grey.withOpacity(0.1),
+                    width: 0.5,
+                  ),
+                ),
+                padding: const EdgeInsets.all(4),
+                child: SvgPicture.asset(
+                  'images/gemini.svg',
+                  fit: BoxFit.contain,
+                  // width: 20, // 可以在这里控制大小
+                ),
               ),
             ),
             const SizedBox(width: 8),
           ],
 
+          // 2. 消息气泡主体
           Flexible(
             child: GestureDetector(
               onTap: message.type == MessageType.image
@@ -961,15 +979,16 @@ class ChatBubble extends StatelessWidget {
               onLongPress: () => _onLongPress(context),
               child: Container(
                 constraints: BoxConstraints(
-                  maxWidth: MediaQuery.of(context).size.width * 0.7,
+                  // 限制最大宽度，防止气泡占满屏幕
+                  maxWidth: MediaQuery.of(context).size.width * 0.82,
                 ),
                 padding: message.type == MessageType.text
-                    ? const EdgeInsets.symmetric(horizontal: 16, vertical: 12)
+                    ? const EdgeInsets.symmetric(horizontal: 14, vertical: 10)
                     : const EdgeInsets.all(4),
                 decoration: BoxDecoration(
                   color: isMe
-                      ? const Color.fromRGBO(44, 100, 247, 1)
-                      : Colors.white,
+                      ? const Color.fromRGBO(44, 100, 247, 1) // 用户: 蓝色背景
+                      : Colors.white, // AI: 白色背景
                   borderRadius: BorderRadius.only(
                     topLeft: const Radius.circular(18),
                     topRight: const Radius.circular(18),
@@ -978,22 +997,41 @@ class ChatBubble extends StatelessWidget {
                   ),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.04),
-                      blurRadius: 6,
+                      color: Colors.black.withOpacity(0.05),
+                      blurRadius: 5,
                       offset: const Offset(0, 2),
                     ),
                   ],
+                  // AI 消息增加边框以区分白色背景
+                  border: !isMe
+                      ? Border.all(color: Colors.grey.withOpacity(0.15))
+                      : null,
                 ),
-                child: _buildContent(),
+                child: _buildContent(context),
               ),
             ),
           ),
+
+          // 3. 用户发送状态 Loading
+          if (isMe && message.isSending)
+            const Padding(
+              padding: EdgeInsets.only(top: 12, left: 8),
+              child: SizedBox(
+                width: 12,
+                height: 12,
+                child: CircularProgressIndicator(
+                  strokeWidth: 1.5,
+                  color: Colors.blueAccent,
+                ),
+              ),
+            ),
         ],
       ),
     );
   }
 
-  Widget _buildContent() {
+  /// 构建消息内容
+  Widget _buildContent(BuildContext context) {
     switch (message.type) {
       case MessageType.image:
       case MessageType.sticker:
@@ -1001,30 +1039,163 @@ class ChatBubble extends StatelessWidget {
           borderRadius: BorderRadius.circular(14),
           child: CachedNetworkImage(
             imageUrl: message.content,
-            fit: BoxFit.cover,
-            placeholder: (_, __) => const SizedBox(
+            width: 200,
+            fit: BoxFit.contain,
+            placeholder: (_, _) => const SizedBox(
               width: 150,
               height: 150,
               child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
             ),
-            errorWidget: (_, __, ___) => const SizedBox(
+            errorWidget: (_, _, _) => const SizedBox(
               width: 100,
               height: 100,
               child: Icon(Icons.broken_image, color: Colors.grey),
             ),
           ),
         );
+
       case MessageType.text:
-      default:
-        return Text(
-          message.content,
-          style: TextStyle(
-            fontSize: 15,
-            height: 1.4,
-            color: message.isMe ? Colors.white : Colors.black87,
+        if (message.isMe) {
+          return Text(
+            message.content,
+            style: const TextStyle(
+              fontSize: 15,
+              height: 1.5,
+              color: Colors.white,
+            ),
+          );
+        } else {
+          return _buildAiMarkdown(context);
+        }
+    }
+  }
+
+  Widget _buildAiMarkdown(BuildContext context) {
+    return GptMarkdown(
+      message.content,
+      style: const TextStyle(fontSize: 15, height: 1.6, color: Colors.black87),
+      textAlign: TextAlign.left,
+      textScaler: const TextScaler.linear(1),
+      useDollarSignsForLatex: true,
+
+      highlightBuilder: (context, text, style) {
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+          margin: const EdgeInsets.symmetric(horizontal: 2),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF3F4F6),
+            borderRadius: BorderRadius.circular(4),
+            border: Border.all(color: const Color(0xFFE5E7EB)),
+          ),
+          child: Text(
+            text,
+            style: TextStyle(
+              fontFamily: 'monospace',
+              fontSize: (style.fontSize ?? 15) * 0.9,
+              color: const Color(0xFFE01E5A),
+              fontWeight: FontWeight.w500,
+            ),
           ),
         );
-    }
+      },
+
+      latexWorkaround: (tex) {
+        List<String> stack = [];
+        tex = tex.splitMapJoin(
+          RegExp(r"\\text\{|\{|\}|\_"),
+          onMatch: (p) {
+            String input = p[0] ?? "";
+            if (input == r"\text{") stack.add(input);
+            if (stack.isNotEmpty) {
+              if (input == r"{") stack.add(input);
+              if (input == r"}") stack.removeLast();
+              if (input == r"_") return r"\_";
+            }
+            return input;
+          },
+        );
+        return tex.replaceAllMapped(RegExp(r"align\*"), (match) => "aligned");
+      },
+
+      latexBuilder: (context, tex, textStyle, inline) {
+        if (tex.contains(r"\begin{tabular}")) {
+          String tableString =
+              "|${(RegExp(r"^\\begin\{tabular\}\{.*?\}(.*?)\\end\{tabular\}$", multiLine: true, dotAll: true).firstMatch(tex)?[1] ?? "").trim()}|";
+
+          tableString = tableString
+              .replaceAll(r"\\", "|\n|")
+              .replaceAll(r"\hline", "")
+              .replaceAll(RegExp(r"(?<!\\)&"), "|");
+
+          var tableStringList = tableString.split("\n")..insert(1, "|---|");
+          tableString = tableStringList.join("\n");
+
+          return GptMarkdown(tableString);
+        }
+
+        var controller = ScrollController();
+
+        Widget child = Math.tex(
+          tex,
+          textStyle: textStyle.copyWith(color: Colors.black87),
+          onErrorFallback: (err) =>
+              Text(tex, style: textStyle.copyWith(color: Colors.red)),
+        );
+
+        if (!inline) {
+          child = Container(
+            width: double.infinity,
+            margin: const EdgeInsets.symmetric(vertical: 8),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.grey.shade200),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.02),
+                  blurRadius: 4,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Scrollbar(
+              controller: controller,
+              thumbVisibility: true,
+              child: SingleChildScrollView(
+                controller: controller,
+                scrollDirection: Axis.horizontal,
+                child: child,
+              ),
+            ),
+          );
+        }
+
+        return SelectionArea(child: child);
+      },
+
+      sourceTagBuilder: (buildContext, string, textStyle) {
+        var value = int.tryParse(string);
+        value ??= -1;
+        value += 1;
+        return Container(
+          margin: const EdgeInsets.only(left: 2, right: 2, bottom: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          decoration: BoxDecoration(
+            color: Colors.blue.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: Text(
+            "$value",
+            style: const TextStyle(
+              fontSize: 10,
+              color: Colors.blueAccent,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        );
+      },
+    );
   }
 }
 

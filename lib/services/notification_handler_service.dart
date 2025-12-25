@@ -9,6 +9,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../models/social_notification_model.dart';
 import '../pages/post_detail_page.dart';
+import '../pages/user_profile_page.dart';
 
 class NotificationHandlerService extends GetxService {
   final FlutterLocalNotificationsPlugin _notificationsPlugin =
@@ -92,13 +93,29 @@ class NotificationHandlerService extends GetxService {
   void _onNotificationTap(NotificationResponse response) {
     if (response.payload != null) {
       final Map<String, dynamic> data = jsonDecode(response.payload!);
-      final int postId = data['postId'];
-      debugPrint("跳转到帖子 ID: $postId");
-      // 这里可以执行跳转逻辑
-      Navigator.push(
-        Get.context!,
-        MaterialPageRoute(builder: (context) => PostDetailPage(postId: postId)),
-      );
+      final String type = data['type'] ?? 'LIKE';
+
+      if (type == 'FOLLOW') {
+        // 🔥 如果是关注，跳转到用户主页
+        final int triggerId = data['triggerId'];
+        debugPrint("跳转到用户主页 ID: $triggerId");
+        Navigator.push(
+          Get.context!,
+          MaterialPageRoute(
+            builder: (context) => UserProfilePage(userId: triggerId),
+          ),
+        );
+      } else {
+        // 🔥 其他类型（点赞/评论），跳转到帖子详情
+        final int postId = data['postId'];
+        debugPrint("跳转到帖子 ID: $postId");
+        Navigator.push(
+          Get.context!,
+          MaterialPageRoute(
+            builder: (context) => PostDetailPage(postId: postId),
+          ),
+        );
+      }
     }
   }
 
@@ -119,18 +136,22 @@ class NotificationHandlerService extends GetxService {
   }
 
   /// 展示定制化的社交通知
+  // 修改通知展示逻辑
   Future<void> handleIncomingNotification(SocialNotificationModel note) async {
     String title = '';
     String body = '';
-    String largeIconPath = '';
 
     // 1. 根据类型定制文本
     if (note.type == 'LIKE') {
       title = '🔥 有人点赞了你';
       body = '${note.triggerName} 赞了你的帖子: "${note.postTitle}"';
     } else if (note.type == 'COMMENT') {
-      title = '💬 收到新评论';
+      title = '💬 有人评论了你的帖子';
       body = '${note.triggerName}: "${note.commentContent ?? ''}"';
+    } else if (note.type == 'FOLLOW') {
+      // 🔥 新增关注文案
+      title = '🎉 有人关注了你';
+      body = '${note.triggerName} 开始关注你了 🎉';
     }
 
     // 2. 准备大图标 (用户头像)
@@ -139,27 +160,33 @@ class NotificationHandlerService extends GetxService {
       'avatar_${note.triggerId}.png',
     );
 
+    // 🔥 如果没有头像，使用默认的一个 assets 图标 (可选优化)
+    // String? finalLargeIcon = avatarPath;
+
     // 3. 配置 Android 样式
     final AndroidNotificationDetails androidDetails =
         AndroidNotificationDetails(
           'social_alerts',
           '社交动态',
-          channelDescription: '点赞、评论等社交通知',
+          channelDescription: '点赞、评论、关注等社交通知',
           importance: Importance.max,
           priority: Priority.high,
           showWhen: true,
-          color: Colors.blueAccent, // 通知的小图标颜色
+          color: const Color(0xFF6C63FF), // 使用比较潮的靛蓝色
+          // 🔥 大图标逻辑：如果是关注，头像显示在右侧大图非常直观
           largeIcon: avatarPath != null
               ? FilePathAndroidBitmap(avatarPath)
-              : null,
-          // 使用 BigTextStyle 支持长文本展示
+              : null, // 如果没头像就不显示大图，只显示小图标
+          // 使用 BigTextStyle
           styleInformation: BigTextStyleInformation(
             body,
             contentTitle: title,
-            summaryText: note.type == 'LIKE' ? '新增点赞' : '新增评论',
+            summaryText: note.type == 'FOLLOW'
+                ? '关注提醒'
+                : (note.type == 'LIKE' ? '点赞提醒' : '评论提醒'),
+            htmlFormatBigText: true, // 允许简单的 HTML 格式
+            htmlFormatContentTitle: true,
           ),
-          // 允许点击通知清除
-          ticker: 'ticker',
         );
 
     // 4. 配置 iOS 样式
@@ -170,7 +197,7 @@ class NotificationHandlerService extends GetxService {
       attachments: avatarPath != null
           ? [DarwinNotificationAttachment(avatarPath)]
           : null,
-      subtitle: note.postTitle,
+      subtitle: note.type == 'FOLLOW' ? '你有了新粉丝' : note.postTitle,
     );
 
     final NotificationDetails platformDetails = NotificationDetails(
@@ -180,11 +207,16 @@ class NotificationHandlerService extends GetxService {
 
     // 5. 显示通知
     await _notificationsPlugin.show(
-      note.hashCode, // 确保 ID 唯一，防止覆盖
+      note.hashCode,
       title,
       body,
       platformDetails,
-      payload: jsonEncode({'postId': note.postId}),
+      // 🔥 Payload 增加 type 和 triggerId 用于跳转
+      payload: jsonEncode({
+        'postId': note.postId,
+        'type': note.type,
+        'triggerId': note.triggerId,
+      }),
     );
   }
 }

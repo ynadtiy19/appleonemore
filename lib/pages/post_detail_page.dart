@@ -299,8 +299,12 @@ class _PostDetailPageState extends State<PostDetailPage>
 
   void _goToAuthorProfile() {
     if (_post == null) return;
-    Get.to(
-      () => UserProfilePage(userId: _post!.userId, userName: _post!.authorName),
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) =>
+            UserProfilePage(userId: _post!.userId, userName: _post!.authorName),
+      ),
     );
   }
 
@@ -561,7 +565,13 @@ class _PostDetailPageState extends State<PostDetailPage>
   Widget _buildCommentItem(Comment c) {
     return InkWell(
       onTap: () {
-        Get.to(() => UserProfilePage(userId: c.userId, userName: c.authorName));
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) =>
+                UserProfilePage(userId: c.userId, userName: c.authorName),
+          ),
+        );
       },
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 12),
