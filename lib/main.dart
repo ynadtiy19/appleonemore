@@ -4,6 +4,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_quill/flutter_quill.dart' as quill;
 import 'package:get/get.dart';
 import 'package:gpt_markdown/gpt_markdown.dart';
+import 'package:kplayer/kplayer.dart';
 
 import 'pages/splash_page.dart';
 import 'services/db_service.dart';
@@ -11,6 +12,7 @@ import 'services/storage_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  Player.boot();
 
   // 初始化服务 (顺序很重要)
 

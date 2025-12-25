@@ -153,4 +153,68 @@ class ApiService {
       return null;
     }
   }
+
+  /// 🎞️ 获取 Intercom GIFs
+  /// 返回 URL 列表
+  static Future<List<String>> fetchIntercomGifs({String query = ''}) async {
+    try {
+      var headers = {
+        'Accept': ' */*',
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Origin': ' https://www.elegantthemes.com',
+        'User-Agent':
+            ' Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36 Edg/144.0.0.0',
+        'Cache-Control': ' no-cache',
+        'Pragma': ' no-cache',
+      };
+
+      var request = http.Request(
+        'POST',
+        Uri.parse('https://api-iam.intercom.io/messenger/web/gifs'),
+      );
+
+      request.bodyFields = {
+        'app_id': 'hrpt54hy',
+        'v': '3',
+        'g': '5839509c7ebc3d18eebb2635b5383d33bd89d98f',
+        's': '1ab367b2-343a-4efa-b458-03f45cae95e2',
+        'r': 'https://www.elegantthemes.com/',
+        'platform': 'web',
+        'installation_type': 'js-snippet',
+        'installation_version': 'undefined',
+        'Idempotency-Key': '1fb41c34ab9cdd74',
+        'internal': '',
+        'is_intersection_booted': 'false',
+        'page_title': '加入优雅主题',
+        'user_active_company_id': '-1',
+        'user_data': '{"anonymous_id":"80109712-c126-4c90-a265-c09853d7450c"}',
+        'query': query, // 动态关键词
+        'referer': 'https://www.elegantthemes.com/join/',
+        'device_identifier': 'b015be9f-e920-47c8-829e-9d2cc6443e5a',
+      };
+
+      request.headers.addAll(headers);
+
+      http.StreamedResponse response = await request.send();
+
+      if (response.statusCode == 200) {
+        String responseStr = await response.stream.bytesToString();
+        final json = jsonDecode(responseStr);
+
+        if (json['results'] != null) {
+          final results = json['results'] as List;
+          // 提取 GIF 的 URL
+          // results 包含 "url" (全尺寸) 和 "previewUrl" (预览)
+          // 这里返回全尺寸 URL 用于插入，或者你可以自定义返回模型
+          return results.map<String>((e) => e['url'].toString()).toList();
+        }
+      } else {
+        debugPrint(response.reasonPhrase);
+      }
+      return [];
+    } catch (e) {
+      debugPrint("Fetch GIF Error: $e");
+      return [];
+    }
+  }
 }

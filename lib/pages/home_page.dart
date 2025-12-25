@@ -92,8 +92,13 @@ class HomePage extends StatelessWidget {
         }),
         floatingActionButton: _CustomFloatingActionButton(
           onPressed: () async {
-            final result = await Get.to(() => const EditorPage());
-            if (result == true) c.silentUpdate();
+            final result = await Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const EditorPage()),
+            );
+            if (result == true) {
+              c.silentUpdate();
+            }
           },
         ),
       ),

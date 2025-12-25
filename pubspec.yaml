@@ -48,6 +48,7 @@ dependencies:
   flutter_math_fork: ^0.7.4
   flutter_svg: ^2.2.3
   url_launcher: ^6.3.2
+  kplayer: ^0.4.2
 #  path: ^1.9.1
 
   cupertino_icons: ^1.0.8
@@ -97,6 +98,8 @@ flutter:
 
   assets:
     - assets/keys/
+    - assets/receive.mp3
+    - assets/send.mp3
     - images/
     - assets/keys/@dolphin9interim_key.atKeys
     - assets/keys/@gemini2banana_key.atKeys

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:get/get.dart';
 import 'package:http/http.dart' as http;
+import 'package:kplayer/kplayer.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../models/social_notification_model.dart';
@@ -204,6 +205,15 @@ class NotificationHandlerService extends GetxService {
       android: androidDetails,
       iOS: iosDetails,
     );
+
+    if (WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) {
+      try {
+        var player = Player.asset("assets/receive.mp3");
+        player.play();
+      } catch (e) {
+        debugPrint("播放自定义音效失败: $e");
+      }
+    }
 
     // 5. 显示通知
     await _notificationsPlugin.show(
