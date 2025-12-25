@@ -1,6 +1,5 @@
 package com.example.appleonemore
 
-
 import android.util.Base64
 import android.util.Log
 import okhttp3.*
@@ -10,11 +9,12 @@ import java.net.URLEncoder
 import java.util.*
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.TimeUnit
+import kotlin.concurrent.thread
 
 class SesameWebSocket(
     private val idToken: String,
-    private val character: String = "Maya",
-    private val clientName: String = "Consumer-Web-App"
+    private val character: String = "Miles",
+    private val clientName: String = "RP-Android"
 ) {
 
     companion object {
@@ -71,13 +71,9 @@ class SesameWebSocket(
 
             val request = Request.Builder()
                 .url(wsUrl)
-                .addHeader("Origin", "https://app.sesame.com")
-                .addHeader("Host", "sesameai.app")
-                .addHeader("Accept-Encoding", "gzip, deflate, br, zstd")
-                .addHeader("Accept-Language", "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7")
-                .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36")
+                .addHeader("Origin", "https://www.sesame.com")
+                .addHeader("User-Agent", "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36")
                 .build()
-
 
             webSocket = client.newWebSocket(request, WebSocketListener())
 

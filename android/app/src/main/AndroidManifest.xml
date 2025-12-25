@@ -1,23 +1,40 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- 1. 基础应用权限 -->
+    <!-- ================= 权限合并 ================= -->
+    <!-- 基础网络 -->
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+
+    <!-- 音频相关 (原生+Flutter都需要) -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+
+    <!-- 媒体读取 (Flutter 原有) -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
 
-    <!-- 2. 通知插件所需权限 -->
+    <!-- 通知相关 (Flutter 原有) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <uses-permission android:name="android.permission.VIBRATE"/>
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
 
+    <!-- ================= 车载功能 ================= -->
+    <!-- 注意：如果你只在手机上跑，请注释掉下面这两行，否则很多手机会提示不兼容 -->
+    <!-- <uses-feature android:name="android.hardware.type.automotive" android:required="false" /> -->
+    <!-- <uses-feature android:name="android.software.car.templates_host" android:required="false" /> -->
+
     <application
             android:label="@string/app_name"
             android:name="${applicationName}"
-            android:icon="@mipmap/guanbiziran">
+            android:icon="@mipmap/guanbiziran"
+            android:allowBackup="true"
+            android:supportsRtl="true"
+            android:usesCleartextTraffic="true"
+            android:networkSecurityConfig="@xml/network_security_config">
 
+        <!-- 注意：上面保留了 networkSecurityConfig，请确保你把原生项目的 res/xml/network_security_config.xml 也复制过来了！ -->
+
+        <!-- ================= MainActivity (Flutter 入口) ================= -->
         <activity
                 android:name=".MainActivity"
                 android:exported="true"
@@ -30,7 +47,6 @@
                 android:showWhenLocked="true"
                 android:turnScreenOn="true">
 
-            <!-- 指定 Android 启动主题 -->
             <meta-data
                     android:name="io.flutter.embedding.android.NormalTheme"
                     android:resource="@style/NormalTheme"
@@ -41,14 +57,15 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
 
-            <!-- 确保点击通知能正确拉起应用 -->
+            <!-- 如果还需要支持车载启动，可以在这里加 intent-filter，但通常不需要 -->
+
             <intent-filter>
                 <action android:name="SELECT_NOTIFICATION" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
 
-        <!-- 3. 通知插件必须的 Receiver 组：处理预约、重启恢复、按钮动作 -->
+        <!-- ================= Flutter 通知插件 Receivers ================= -->
         <receiver
                 android:exported="false"
                 android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver" />
@@ -73,7 +90,6 @@
                 android:value="2" />
     </application>
 
-    <!-- 4. 文本查询配置 (Flutter Engine 所需) -->
     <queries>
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>

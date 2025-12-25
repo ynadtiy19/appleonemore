@@ -3,8 +3,10 @@ import 'package:get/get.dart';
 import 'package:hugeicons/hugeicons.dart';
 
 import '../controllers/main_controller.dart';
+import 'SesameChatPage.dart';
 import 'group_chat_page.dart';
 import 'home_page.dart';
+import 'payment_page.dart';
 import 'profile_page.dart';
 
 class MainLayout extends StatelessWidget {
@@ -16,6 +18,8 @@ class MainLayout extends StatelessWidget {
     final pages = [
       const HomePage(),
       const GroupChatPage(),
+      const PaymentPage(),
+      const SesameChatPage(),
       const ProfilePage(),
     ];
 
@@ -43,6 +47,22 @@ class MainLayout extends StatelessWidget {
                 size: 30.0,
               ),
               label: "聊天",
+            ),
+            NavigationDestination(
+              icon: HugeIcon(
+                icon: HugeIcons.strokeRoundedPaypal,
+                color: Color(0xFFB6C0F4),
+                size: 30.0,
+              ),
+              label: "订单",
+            ),
+            NavigationDestination(
+              icon: HugeIcon(
+                icon: HugeIcons.strokeRoundedAiAudio,
+                color: Color(0xFFB6C0F4),
+                size: 30.0,
+              ),
+              label: "语音",
             ),
             NavigationDestination(
               icon: HugeIcon(
