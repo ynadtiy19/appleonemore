@@ -69,7 +69,7 @@ class _SesameChatPageState extends State<SesameChatPage> {
                     CircularProgressIndicator(color: Color(0xFF5A6230)),
                     SizedBox(height: 16),
                     Text(
-                      "Securing connection...",
+                      "安全连接中...",
                       style: TextStyle(color: Colors.grey),
                     ),
                   ],
@@ -92,7 +92,7 @@ class _SesameChatPageState extends State<SesameChatPage> {
                       ),
                       const SizedBox(height: 16),
                       Text(
-                        "Initialization Failed",
+                        "初始化失败",
                         style: Theme.of(context).textTheme.titleLarge,
                       ),
                       const SizedBox(height: 8),
@@ -105,7 +105,7 @@ class _SesameChatPageState extends State<SesameChatPage> {
                       ElevatedButton.icon(
                         onPressed: _retryFetch,
                         icon: const Icon(Icons.refresh),
-                        label: const Text("Retry"),
+                        label: const Text("重试"),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFF5A6230),
                           foregroundColor: Colors.white,

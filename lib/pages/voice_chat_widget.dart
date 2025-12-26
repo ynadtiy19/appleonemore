@@ -44,7 +44,7 @@ class _VoiceChatWidgetState extends State<VoiceChatWidget>
   static const _eventChannel = EventChannel('com.sesame.voicechat/events');
 
   // --- State ---
-  String _statusText = "Tap sesame to start";
+  String _statusText = "轻触开始与sesame聊天";
   bool _isConnected = false; // 是否已完全连接（Native层 WebSocket+Audio Ready）
   bool _isConnecting = false; // 是否正在连接中（UI Loading状态）
   bool _isMuted = false;
@@ -125,11 +125,11 @@ class _VoiceChatWidgetState extends State<VoiceChatWidget>
               if (value == "Connected" || value == "Ready") {
                 _isConnected = true;
                 _isConnecting = false;
-                _statusText = "Connected";
+                _statusText = "已连接";
               } else if (value == "Disconnected") {
                 _isConnected = false;
                 _isConnecting = false;
-                _statusText = "Tap sesame to start";
+                _statusText = "轻触开始与sesame聊天";
               } else {
                 // Connecting, Initializing, etc.
                 _statusText = value.toString();
@@ -143,18 +143,18 @@ class _VoiceChatWidgetState extends State<VoiceChatWidget>
             break;
           case 'error':
             setState(() {
-              _statusText = "Error: $value";
+              _statusText = "错误: $value";
               _isConnecting = false;
               _isConnected = false;
             });
             break;
           case 'init_progress':
-            setState(() => _statusText = "Cooking... $value%");
+            setState(() => _statusText = "烹饪中... $value%");
             break;
         }
       },
       onError: (error) {
-        setState(() => _statusText = "Native Error: $error");
+        setState(() => _statusText = "原生层错误: $error");
       },
     );
   }
@@ -165,20 +165,20 @@ class _VoiceChatWidgetState extends State<VoiceChatWidget>
 
     setState(() {
       _isConnecting = true;
-      _statusText = "Requesting Permission...";
+      _statusText = "请求权限...";
     });
 
     // 1. 请求权限
     var status = await Permission.microphone.request();
     if (status != PermissionStatus.granted) {
       setState(() {
-        _statusText = "Microphone Permission Denied";
+        _statusText = "麦克风权限拒绝";
         _isConnecting = false;
       });
       return;
     }
 
-    setState(() => _statusText = "Connecting...");
+    setState(() => _statusText = "连接中...");
 
     // 2. 调用原生 connect 方法
     try {
@@ -191,7 +191,7 @@ class _VoiceChatWidgetState extends State<VoiceChatWidget>
       HapticFeedback.mediumImpact();
     } on PlatformException catch (e) {
       setState(() {
-        _statusText = "Connection Failed: ${e.message}";
+        _statusText = "连接失败: ${e.message}";
         _isConnecting = false;
       });
     }
@@ -214,19 +214,19 @@ class _VoiceChatWidgetState extends State<VoiceChatWidget>
   Future<void> _disconnectAndClose() async {
     HapticFeedback.mediumImpact();
     setState(() {
-      _statusText = "Disconnecting...";
+      _statusText = "断开中...";
     });
 
     try {
       await _methodChannel.invokeMethod('disconnect');
     } catch (e) {
-      debugPrint("Disconnect error: $e");
+      debugPrint("断开错误: $e");
     } finally {
       // 重置状态
       setState(() {
         _isConnected = false;
         _isConnecting = false;
-        _statusText = "Tap sesame to start";
+        _statusText = "轻触开始与sesame聊天";
       });
       widget.onCallEnded();
     }
@@ -278,8 +278,6 @@ class _VoiceChatWidgetState extends State<VoiceChatWidget>
                     onTap: _startCall,
                     child: Lottie.asset(
                       'images/sesame.json',
-                      width: 300,
-                      height: 300,
                       fit: BoxFit.fill,
                       animate: !_isConnected, // 连接后停止动画节省资源
                     ),
@@ -359,7 +357,7 @@ class _VoiceChatWidgetState extends State<VoiceChatWidget>
                 // 静音按钮
                 _ControlButton(
                   icon: _isMuted ? Icons.mic_off : Icons.mic,
-                  label: _isMuted ? "Unmute" : "Mute",
+                  label: _isMuted ? "取消静音" : "静音",
                   color: _isMuted ? Colors.orange : const Color(0xFF5A6230),
                   backgroundColor: _isMuted
                       ? Colors.orange.shade50
@@ -370,7 +368,7 @@ class _VoiceChatWidgetState extends State<VoiceChatWidget>
                 // 挂断按钮
                 _ControlButton(
                   icon: Icons.call_end,
-                  label: "End Call",
+                  label: "结束通话",
                   color: Colors.white,
                   backgroundColor: Colors.red.shade400,
                   onTap: _isConnected ? _disconnectAndClose : null,

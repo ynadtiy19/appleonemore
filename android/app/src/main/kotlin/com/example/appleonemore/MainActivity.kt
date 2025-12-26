@@ -81,10 +81,8 @@ class MainActivity : FlutterActivity() {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL_CONTROL).setMethodCallHandler { call, result ->
             when (call.method) {
                 "connect" -> {
-                    // 从Flutter获取参数
                     val contactName = call.argument<String>("contactName") ?: "Kira-EN"
                     val characterName = call.argument<String>("characterName") ?: "Kira"
-                    // 获取Flutter传递过来的Token
                     val token = call.argument<String>("token")
 
                     if (hasRequiredPermissions()) {
@@ -113,14 +111,9 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun setupManagers() {
-        // Initialize TokenManager wrapper
         tokenManager = TokenManager(context)
-
-        // 我们不再强制依赖本地文件加载Token，因为Flutter会传过来
-        // 但如果有 SessionManager 的预热逻辑，我们需要先初始化它
         if (tokenManager != null) {
             sessionManager = SessionManager.getInstance(applicationContext, "Kira-EN", 3)
-            // 此时可能还没有Token，SessionManager会在Token到来后真正开始工作
             sessionManager?.initialize(tokenManager!!)
         }
     }
@@ -132,55 +125,39 @@ class MainActivity : FlutterActivity() {
 
         mainScope.launch {
             try {
-                // 1. 如果Flutter传来了新Token，立即保存
                 if (!token.isNullOrEmpty()) {
-                    // 我们传空字符串作为refreshToken，因为API没返回
                     tokenManager?.storeTokens(token, "")
-                    Log.i(TAG, "Received and stored new token from Flutter")
                 }
 
-                // 2. 获取针对该联系人的 SessionManager
                 val mgr = SessionManager.getInstance(applicationContext, contactName, 3)
                 if (tokenManager != null) mgr.initialize(tokenManager!!)
 
-                // ==========================================
-                // [核心修复]：增加重试等待机制
-                // ==========================================
                 sendEvent("status", "Finding session...")
 
                 var sessionState: SessionManager.SessionState? = null
                 var attempts = 0
-                val maxAttempts = 30 // 尝试30次，每次500ms = 最多等待15秒
+                val maxAttempts = 30
 
                 while (attempts < maxAttempts) {
-                    // 尝试获取会话
                     sessionState = mgr.getBestAvailableSession(contactName)
+                    if (sessionState != null) break
 
-                    if (sessionState != null) {
-                        break // 找到了！退出循环
-                    }
-
-                    // 没找到，通知 Flutter 我们在等待（显示 Loading...）
                     val waitPercent = ((attempts.toFloat() / maxAttempts) * 100).toInt()
-                    // 这里的 init_progress 会让 Flutter 显示 "Cooking... X%"
                     sendEvent("init_progress", waitPercent)
-                    Log.d(TAG, "Waiting for session pool to initialize... attempt $attempts")
-
-                    delay(500) // 等待 500ms 后重试
+                    Log.d(TAG, "Waiting for session pool... attempt $attempts")
+                    delay(500)
                     attempts++
                 }
 
                 if (sessionState == null) {
-                    sendEvent("error", "Timeout: Failed to establish AI connection. Please retry.")
+                    sendEvent("error", "Timeout: Failed to establish connection.")
                     return@launch
                 }
 
-                // 3. 成功获取会话
                 currentSession = sessionState
                 sessionManager = mgr
                 sesameWebSocket = sessionState.webSocket
 
-                // 4. 设置 WebSocket 回调
                 sessionState.webSocket.apply {
                     onConnectCallback = {
                         mainScope.launch { onWebSocketConnected() }
@@ -196,14 +173,12 @@ class MainActivity : FlutterActivity() {
                     }
                 }
 
-                // 5. 根据预热状态决定下一步
                 if (sessionState.isPromptComplete) {
                     Log.i(TAG, "Session ready, starting audio...")
                     onWebSocketConnected()
                 } else {
                     Log.i(TAG, "Session warming up: ${(sessionState.promptProgress * 100).toInt()}%")
                     sendEvent("status", "Initializing...")
-
                     trackSessionProgress()
                     setupAudio(startPlaybackImmediately = false)
                 }
@@ -227,7 +202,6 @@ class MainActivity : FlutterActivity() {
                     if (isComplete) {
                         sendEvent("init_progress", 100)
                         sendEvent("status", "Ready")
-
                         audioPlayer?.startPlayback()
                         onWebSocketConnected()
                         break
@@ -235,7 +209,7 @@ class MainActivity : FlutterActivity() {
                         sendEvent("init_progress", percent)
                     }
                 }
-                delay(500)
+                delay(200) // Check faster
             }
         }
     }
@@ -243,7 +217,6 @@ class MainActivity : FlutterActivity() {
     private fun onWebSocketConnected() {
         isConnected = true
         sendEvent("status", "Connected")
-
         if (audioRecordManager == null) {
             setupAudio(startPlaybackImmediately = true)
         }
@@ -257,32 +230,25 @@ class MainActivity : FlutterActivity() {
 
     private fun disconnect() {
         sendEvent("status", "Disconnecting...")
-
         audioRecordManager?.stopRecording()
         audioPlayer?.stopPlayback()
-
         isConnected = false
-
         currentSession?.let { session ->
             sessionManager?.removeSession(session)
         }
-
         audioRecordManager = null
         audioPlayer = null
         sesameWebSocket = null
         currentSession = null
-
         resetAudioRouting()
-
         sendEvent("status", "Disconnected")
     }
 
     private fun setupAudio(startPlaybackImmediately: Boolean) {
         try {
             val isCarMode = isRunningInCar()
-            applyAudioRouting()
+            applyAudioRouting() // [修复] 确保在设置播放器前应用路由
 
-            // Setup Player
             val sampleRate = sesameWebSocket?.serverSampleRate ?: 24000
             audioPlayer = AudioPlayer(sampleRate).apply {
                 onErrorCallback = { error ->
@@ -294,11 +260,9 @@ class MainActivity : FlutterActivity() {
                 audioPlayer?.startPlayback()
             }
 
-            // Setup Recorder
             audioRecordManager = com.example.appleonemore.AudioManager().apply {
                 adjustForCarMode(isCarMode)
                 setDebugMode(false)
-
                 onAudioDataCallback = { audioData, hasVoice ->
                     if (isConnected) {
                         if (hasVoice) {
@@ -311,13 +275,11 @@ class MainActivity : FlutterActivity() {
                         }
                     }
                 }
-
                 onErrorCallback = { error ->
                     mainScope.launch { sendEvent("error", "Recording: $error") }
                 }
             }
 
-            // Start Recording
             if (audioRecordManager?.startRecording() == true) {
                 startAudioProcessing()
             } else {
@@ -332,7 +294,6 @@ class MainActivity : FlutterActivity() {
 
     private fun startAudioProcessing() {
         if (audioProcessingThread != null && audioProcessingThread!!.isAlive) return
-
         audioProcessingThread = thread {
             while (isConnected && sesameWebSocket?.isConnected() == true) {
                 try {
@@ -340,19 +301,20 @@ class MainActivity : FlutterActivity() {
                     if (audioChunk != null) {
                         audioPlayer?.queueAudioData(audioChunk)
                     }
-                    val delayMs = if (isRunningInCar()) 10L else 5L
+                    // [优化] 减少处理线程的休眠时间以降低延迟
+                    val delayMs = if (isRunningInCar()) 5L else 2L
                     Thread.sleep(delayMs)
                 } catch (e: Exception) {
                     Log.e(TAG, "Audio processing loop error", e)
                     break
                 }
             }
-            Log.d(TAG, "Audio processing thread stopped")
         }
     }
 
     private fun applyAudioRouting() {
         systemAudioManager?.let { audioManager ->
+            // [修复] 通话模式是必须的，但还需要配合 Speakerphone
             audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
 
             when (currentAudioRoute) {
@@ -374,10 +336,19 @@ class MainActivity : FlutterActivity() {
                     audioManager.stopBluetoothSco()
                 }
                 AudioRoute.AUTO -> {
-                    audioManager.isSpeakerphoneOn = false
+                    // [核心修复] 如果没有连接耳机/蓝牙，默认强制开启扬声器
                     if (audioManager.isBluetoothA2dpOn || audioManager.isBluetoothScoOn) {
                         audioManager.startBluetoothSco()
                         audioManager.isBluetoothScoOn = true
+                        audioManager.isSpeakerphoneOn = false
+                        Log.i(TAG, "Audio Routing: AUTO -> Bluetooth")
+                    } else if (audioManager.isWiredHeadsetOn) {
+                        audioManager.isSpeakerphoneOn = false
+                        Log.i(TAG, "Audio Routing: AUTO -> Wired Headset")
+                    } else {
+                        // 手机外放模式
+                        audioManager.isSpeakerphoneOn = true
+                        Log.i(TAG, "Audio Routing: AUTO -> Speakerphone (Forced)")
                     }
                 }
             }
