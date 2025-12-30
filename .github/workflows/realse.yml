@@ -58,9 +58,9 @@ jobs:
           mkdir -p dist
           TAG="${GITHUB_REF_NAME}"
           # 如果构建成功，这里会将产物重命名并移动到 dist 目录
-          cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk dist/fldanplay-${TAG}-android-arm64-v8a.apk
-          cp build/app/outputs/flutter-apk/app-x86_64-release.apk   dist/fldanplay-${TAG}-android-x86_64.apk
-          cp build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk dist/fldanplay-${TAG}-android-armeabi-v7a.apk
+          cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk dist/guanbiziran-${TAG}-android-arm64-v8a.apk
+          cp build/app/outputs/flutter-apk/app-x86_64-release.apk   dist/guanbiziran-${TAG}-android-x86_64.apk
+          cp build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk dist/guanbiziran-${TAG}-android-armeabi-v7a.apk
 
       - name: Upload APK artifacts
         uses: actions/upload-artifact@v4
@@ -77,14 +77,14 @@ jobs:
       - name: Package linux build output
         run: |
           TAG="${GITHUB_REF_NAME}"
-          tar -zcvf fldanplay-${TAG}-linux-amd64.tar.gz -C build/linux/x64/release/bundle .
+          tar -zcvf guanbiziran-${TAG}-linux-amd64.tar.gz -C build/linux/x64/release/bundle .
 
       - name: Upload Linux artifacts
         uses: actions/upload-artifact@v4
         with:
           name: linux
           path: |
-            fldanplay-*.tar.gz
+            guanbiziran-*.tar.gz
 
   windows:
     name: Build Windows
@@ -118,7 +118,7 @@ jobs:
           New-Item -ItemType Directory -Force -Path dist | Out-Null
           $tag = $env:GITHUB_REF_NAME
           $src = Join-Path build windows\x64\runner\Release
-          $zip = Join-Path dist ("fldanplay-$tag-windows-x64.zip")
+          $zip = Join-Path dist ("guanbiziran-$tag-windows-x64.zip")
           Compress-Archive -Path "$src\*" -DestinationPath $zip -Force
 
       - name: Upload Windows artifacts
