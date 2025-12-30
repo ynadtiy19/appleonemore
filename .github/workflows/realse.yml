@@ -1,0 +1,141 @@
+name: Release builds (No Secrets)
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+env:
+  JAVA_VERSION: "21"
+
+jobs:
+  android-linux:
+    name: Build Android and Linux
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Linux desktop deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev rpm patchelf libmpv-dev mpv
+
+      - name: Set up Java ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          distribution: jetbrains
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.38.5"
+          cache: true
+
+      # --- 删除掉了密钥下载和 key.properties 生成步骤 ---
+
+      - name: Build APKs
+        # 注意：如果没有配置签名文件，这里生成的 Release 包通常是未签名或使用 Debug 签名的
+        run: |
+          flutter build apk --release --split-per-abi
+
+      - name: Collect APK artifacts
+        run: |
+          mkdir -p dist
+          TAG="${GITHUB_REF_NAME}"
+          # 如果构建成功，这里会将产物重命名并移动到 dist 目录
+          cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk dist/fldanplay-${TAG}-android-arm64-v8a.apk
+          cp build/app/outputs/flutter-apk/app-x86_64-release.apk   dist/fldanplay-${TAG}-android-x86_64.apk
+          cp build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk dist/fldanplay-${TAG}-android-armeabi-v7a.apk
+
+      - name: Upload APK artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-apk
+          path: dist/*.apk
+
+      - name: Enable Linux desktop
+        run: flutter config --enable-linux-desktop
+
+      - name: Build Flutter for Linux
+        run: flutter build linux
+
+      - name: Package linux build output
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          tar -zcvf fldanplay-${TAG}-linux-amd64.tar.gz -C build/linux/x64/release/bundle .
+
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: |
+            fldanplay-*.tar.gz
+
+  windows:
+    name: Build Windows
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Enable Windows desktop
+        shell: pwsh
+        run: flutter config --enable-windows-desktop
+
+      - name: Pub get
+        shell: pwsh
+        run: flutter pub get
+
+      - name: Build Windows
+        shell: pwsh
+        run: flutter build windows --release
+
+      - name: Zip Windows build
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          $tag = $env:GITHUB_REF_NAME
+          $src = Join-Path build windows\x64\runner\Release
+          $zip = Join-Path dist ("fldanplay-$tag-windows-x64.zip")
+          Compress-Archive -Path "$src\*" -DestinationPath $zip -Force
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: |
+            dist/*.zip
+          if-no-files-found: warn
+
+  release:
+    name: Create draft GitHub Release
+    runs-on: ubuntu-latest
+    needs: [android-linux, windows]
+    permissions: write-all
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: "*"
+          merge-multiple: true
+
+      - name: Create draft release and upload assets
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          name: ${{ github.ref_name }}
+          tag_name: ${{ github.ref_name }}
+          files: |
+            **/*.apk
+            **/*.zip
+            **/*.tar.gz
