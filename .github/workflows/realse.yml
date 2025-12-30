@@ -34,7 +34,19 @@ jobs:
           flutter-version: "3.38.5"
           cache: true
 
-      # --- 删除掉了密钥下载和 key.properties 生成步骤 ---
+      # 【新增步骤】关键修改：删除 android/gradle.properties 中的本地代理和路径配置
+      # 这解决了 "Connection refused" 和路径错误，同时保留了你本地的配置不动
+      - name: Clean up gradle.properties (Remove local proxies)
+        run: |
+          if [ -f "android/gradle.properties" ]; then
+            echo "Found android/gradle.properties, removing proxy settings..."
+            sed -i '/systemProp/d' android/gradle.properties
+            sed -i '/org.gradle.java.home/d' android/gradle.properties
+            echo "Content after cleanup:"
+            cat android/gradle.properties
+          else
+            echo "android/gradle.properties not found, skipping cleanup."
+          fi
 
       - name: Build APKs
         # 注意：如果没有配置签名文件，这里生成的 Release 包通常是未签名或使用 Debug 签名的
