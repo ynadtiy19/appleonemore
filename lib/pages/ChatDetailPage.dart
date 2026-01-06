@@ -188,6 +188,8 @@ class _ChatDetailPageState extends State<ChatDetailPage> {
           onImagePick: () {},
           stickers: _stickers,
           isSending: controller.isSending.value,
+          isAiMode: false,
+          onToggleAiMode: () {},
         ),
       ),
     );

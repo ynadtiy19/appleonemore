@@ -17,7 +17,7 @@ import com.example.appleonemore.SessionManager
 import com.example.appleonemore.TokenManager
 import com.example.appleonemore.SesameWebSocket
 import com.example.appleonemore.AudioPlayer
-import com.example.appleonemore.AudioFileProcessor
+// AudioFileProcessor 已不需要
 
 class MainActivity : FlutterActivity() {
 
@@ -41,13 +41,9 @@ class MainActivity : FlutterActivity() {
     private var currentSession: SessionManager.SessionState? = null
     private var audioProcessingThread: Thread? = null
 
-    // Coroutine scope for Main thread operations
     private val mainScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
-
-    // Flutter Event Sink
     private var eventSink: EventChannel.EventSink? = null
 
-    // Audio Routing Enum
     enum class AudioRoute {
         AUTO, SPEAKER, EARPIECE, WIRED_HEADSET, BLUETOOTH
     }
@@ -56,28 +52,20 @@ class MainActivity : FlutterActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
 
-        // 1. Initialize System Audio
         systemAudioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
-
-        // 2. Initialize Managers
         setupManagers()
 
-        // 3. Setup Event Channel (Native -> Flutter)
         EventChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL_EVENTS).setStreamHandler(
             object : EventChannel.StreamHandler {
                 override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
                     eventSink = events
-                    Log.d(TAG, "Flutter EventChannel attached")
                 }
-
                 override fun onCancel(arguments: Any?) {
                     eventSink = null
-                    Log.d(TAG, "Flutter EventChannel detached")
                 }
             }
         )
 
-        // 4. Setup Method Channel (Flutter -> Native)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL_CONTROL).setMethodCallHandler { call, result ->
             when (call.method) {
                 "connect" -> {
@@ -121,7 +109,7 @@ class MainActivity : FlutterActivity() {
     private fun connect(contactName: String, characterName: String, token: String?) {
         if (isConnected) return
 
-        sendEvent("status", "Authenticating...")
+        sendEvent("status", "Connecting...")
 
         mainScope.launch {
             try {
@@ -132,8 +120,7 @@ class MainActivity : FlutterActivity() {
                 val mgr = SessionManager.getInstance(applicationContext, contactName, 3)
                 if (tokenManager != null) mgr.initialize(tokenManager!!)
 
-                sendEvent("status", "Finding session...")
-
+                // 等待会话建立 (Pool mechanism)
                 var sessionState: SessionManager.SessionState? = null
                 var attempts = 0
                 val maxAttempts = 30
@@ -142,15 +129,13 @@ class MainActivity : FlutterActivity() {
                     sessionState = mgr.getBestAvailableSession(contactName)
                     if (sessionState != null) break
 
-                    val waitPercent = ((attempts.toFloat() / maxAttempts) * 100).toInt()
-                    sendEvent("init_progress", waitPercent)
-                    Log.d(TAG, "Waiting for session pool... attempt $attempts")
+                    // 虽然没有 Cooking，但仍需等待 Socket 连接成功
                     delay(500)
                     attempts++
                 }
 
                 if (sessionState == null) {
-                    sendEvent("error", "Timeout: Failed to establish connection.")
+                    sendEvent("error", "Timeout: Failed to connect.")
                     return@launch
                 }
 
@@ -173,15 +158,13 @@ class MainActivity : FlutterActivity() {
                     }
                 }
 
-                if (sessionState.isPromptComplete) {
-                    Log.i(TAG, "Session ready, starting audio...")
-                    onWebSocketConnected()
-                } else {
-                    Log.i(TAG, "Session warming up: ${(sessionState.promptProgress * 100).toInt()}%")
-                    sendEvent("status", "Initializing...")
-                    trackSessionProgress()
-                    setupAudio(startPlaybackImmediately = false)
-                }
+                // [修改] 不再检查 isPromptComplete，因为 SessionManager 保证返回的都是 Ready 的
+                Log.i(TAG, "Session ready immediately (No Cooking). Starting audio...")
+
+                // 立即触发连接成功事件，并启动音频
+                sendEvent("init_progress", 100) // 直接100%
+                sendEvent("status", "Ready")
+                onWebSocketConnected()
 
             } catch (e: Exception) {
                 Log.e(TAG, "Connection error", e)
@@ -190,33 +173,15 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    // [修改] 此方法已不再被 connect 调用，保留为空壳或移除皆可，为了代码完整性保留但简化
     private fun trackSessionProgress() {
-        mainScope.launch {
-            while (!isConnected) {
-                val sessionProgress = sessionManager?.getSessionProgress()
-
-                if (sessionProgress != null) {
-                    val (progress, isComplete) = sessionProgress
-                    val percent = (progress * 100).toInt()
-
-                    if (isComplete) {
-                        sendEvent("init_progress", 100)
-                        sendEvent("status", "Ready")
-                        audioPlayer?.startPlayback()
-                        onWebSocketConnected()
-                        break
-                    } else {
-                        sendEvent("init_progress", percent)
-                    }
-                }
-                delay(200) // Check faster
-            }
-        }
+        // No-op in No-Cooking mode
     }
 
     private fun onWebSocketConnected() {
         isConnected = true
         sendEvent("status", "Connected")
+        // 立即开启音频
         if (audioRecordManager == null) {
             setupAudio(startPlaybackImmediately = true)
         }
@@ -247,7 +212,7 @@ class MainActivity : FlutterActivity() {
     private fun setupAudio(startPlaybackImmediately: Boolean) {
         try {
             val isCarMode = isRunningInCar()
-            applyAudioRouting() // [修复] 确保在设置播放器前应用路由
+            applyAudioRouting()
 
             val sampleRate = sesameWebSocket?.serverSampleRate ?: 24000
             audioPlayer = AudioPlayer(sampleRate).apply {
@@ -301,7 +266,6 @@ class MainActivity : FlutterActivity() {
                     if (audioChunk != null) {
                         audioPlayer?.queueAudioData(audioChunk)
                     }
-                    // [优化] 减少处理线程的休眠时间以降低延迟
                     val delayMs = if (isRunningInCar()) 5L else 2L
                     Thread.sleep(delayMs)
                 } catch (e: Exception) {
@@ -314,7 +278,6 @@ class MainActivity : FlutterActivity() {
 
     private fun applyAudioRouting() {
         systemAudioManager?.let { audioManager ->
-            // [修复] 通话模式是必须的，但还需要配合 Speakerphone
             audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
 
             when (currentAudioRoute) {
@@ -336,19 +299,15 @@ class MainActivity : FlutterActivity() {
                     audioManager.stopBluetoothSco()
                 }
                 AudioRoute.AUTO -> {
-                    // [核心修复] 如果没有连接耳机/蓝牙，默认强制开启扬声器
                     if (audioManager.isBluetoothA2dpOn || audioManager.isBluetoothScoOn) {
                         audioManager.startBluetoothSco()
                         audioManager.isBluetoothScoOn = true
                         audioManager.isSpeakerphoneOn = false
-                        Log.i(TAG, "Audio Routing: AUTO -> Bluetooth")
                     } else if (audioManager.isWiredHeadsetOn) {
                         audioManager.isSpeakerphoneOn = false
-                        Log.i(TAG, "Audio Routing: AUTO -> Wired Headset")
                     } else {
-                        // 手机外放模式
+                        // 强制外放
                         audioManager.isSpeakerphoneOn = true
-                        Log.i(TAG, "Audio Routing: AUTO -> Speakerphone (Forced)")
                     }
                 }
             }

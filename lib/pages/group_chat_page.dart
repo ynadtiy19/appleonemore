@@ -1,8 +1,9 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_svg/svg.dart';
 import 'package:get/get.dart';
-import 'package:hugeicons/hugeicons.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:visibility_detector/visibility_detector.dart';
 
@@ -12,9 +13,9 @@ import '../services/api_service.dart';
 import '../services/db_service.dart';
 import '../services/frontend_chat_service.dart';
 import '../services/storage_service.dart';
+import '../services/third_party_ai_service.dart';
 import '../widgets/ChatBubble.dart';
 import '../widgets/chat_input_widget.dart';
-import 'chat_page.dart' hide ChatBubble, ChatInputWidget;
 import 'user_profile_page.dart'; // ✅ 引入用户个人主页
 
 // --- 群聊控制器 ---
@@ -23,10 +24,18 @@ class GroupChatController extends GetxController {
   final FrontendChatService _chatService = Get.find();
   final StorageService _storage = Get.find();
 
+  // ✅ 1. 注入 AI 服务
+  final ThirdPartyAiService _aiService = Get.put(ThirdPartyAiService());
+
   // 群聊列表
   final RxList<ChatMsgModel> messages = <ChatMsgModel>[].obs;
   final RxBool isLoading = true.obs;
   final RxBool isSending = false.obs;
+
+  final String botName = "Gemini";
+  final int botId = 999999;
+
+  final RxBool isAiMode = false.obs;
 
   @override
   void onInit() {
@@ -47,11 +56,19 @@ class GroupChatController extends GetxController {
     isLoading.value = false;
   }
 
+  void toggleAiMode() {
+    isAiMode.value = !isAiMode.value;
+    HapticFeedback.selectionClick();
+  }
+
   // 发送群消息
   Future<void> sendMessage(String content, {int type = 1}) async {
     if (content.trim().isEmpty || isSending.value) return;
 
     isSending.value = true;
+
+    final List<ChatMsgModel> contextForAi = List.from(messages);
+    final bool triggerAi = isAiMode.value;
     try {
       // 发送群聊消息: 接收者设为 0，ID设为全局群ID
       await _chatService.sendMessage(
@@ -64,23 +81,64 @@ class GroupChatController extends GetxController {
 
       // 发送成功后刷新列表 (因为 sendMessage 内部已存库)
       await loadHistory();
+      if (triggerAi) {
+        _processAiResponse(content, contextForAi);
+      }
     } finally {
       isSending.value = false;
     }
+  }
+
+  Future<void> _processAiResponse(
+    String userPrompt,
+    List<ChatMsgModel> history,
+  ) async {
+    print("🤖 用户 提问: $userPrompt");
+    print("历史数据：${history.map((e) => e.toJson()).toList()}");
+
+    String? aiReply = await _aiService.fetchReply(
+      currentInput: userPrompt,
+      history: history,
+      botName: botName,
+    );
+
+    if (aiReply != null && aiReply.isNotEmpty) {
+      print("🤖 AI 回复: $aiReply");
+
+      await _sendBotMessageAsProxy(aiReply);
+    }
+  }
+
+  // ✅ 5. 特殊方法：当前用户作为代理发送机器人的消息
+  Future<void> _sendBotMessageAsProxy(String content) async {
+    // 注意：这里我们调用底层的 _chatService 发送消息
+    // 但是，通常 P2P 协议会强制使用你的真实身份签名。
+    // 所以，群里的其他人看到的发送者依然是"你"。
+    // 为了解决这个问题，通常的做法是定义一个 type = 3 (代表 Bot 消息)
+
+    // 我们复用现有的 sendMessage，但 type 设为 3 (假设 3 是 AI 消息)
+    // 需要去 ChatMsgModel 和 UI 解析处适配 type=3
+    await _chatService.sendMessage(
+      content: content,
+      receiverId: 0,
+      receiverAtsign: "@group",
+      conversationId: FrontendChatService.groupConversationId,
+      type: 3,
+    );
+
+    await loadHistory();
   }
 
   void sendSticker(StickerItem sticker) {
     sendMessage("[IMAGE]${sticker.stickerUrl}[/IMAGE]", type: 2);
   }
 
-  // ✅ 新增：发送图片方法的封装
   void sendImage(String imageUrl) {
     sendMessage("[IMAGE]$imageUrl[/IMAGE]", type: 2);
   }
 
   void clearMessages() {
     messages.clear();
-    // 实际项目中可能需要删除 DB
   }
 }
 
@@ -112,10 +170,7 @@ class _GroupChatPageState extends State<GroupChatPage> {
     if (mounted) setState(() => _stickers = res);
   }
 
-  // ✅ 跳转用户主页
   void _goToUserProfile(int userId, String userName) {
-    // 避免跳转到自己的主页 (可选，或者跳转到 ProfilePage)
-    // 这里统一跳转到 UserProfilePage
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -125,7 +180,6 @@ class _GroupChatPageState extends State<GroupChatPage> {
     );
   }
 
-  // ✅ 修改：完整的图片上传与发送逻辑
   Future<void> _sendImage() async {
     final picker = ImagePicker();
 
@@ -218,20 +272,20 @@ class _GroupChatPageState extends State<GroupChatPage> {
         ],
       ),
       actions: [
-        IconButton(
-          icon: const HugeIcon(
-            icon: HugeIcons.strokeRoundedComment01,
-            size: 20.0,
-            color: Colors.black,
-          ),
-          onPressed: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (context) => const ChatPage()),
-            );
-          },
-          tooltip: 'Ai聊天列表',
-        ),
+        // IconButton(
+        //   icon: const HugeIcon(
+        //     icon: HugeIcons.strokeRoundedComment01,
+        //     size: 20.0,
+        //     color: Colors.black,
+        //   ),
+        //   onPressed: () {
+        //     Navigator.push(
+        //       context,
+        //       MaterialPageRoute(builder: (context) => const ChatPage()),
+        //     );
+        //   },
+        //   tooltip: 'Ai聊天列表',
+        // ),
       ],
     );
   }
@@ -265,6 +319,79 @@ class _GroupChatPageState extends State<GroupChatPage> {
 
   // 🔥 核心：构建群聊单条消息项 (头像 + 昵称 + 气泡)
   Widget _buildGroupChatItem(ChatMsgModel msg, bool isMe) {
+    // ✅ 判定是否为 AI 消息 (Type == 3)
+    bool isAi = msg.type == 3;
+
+    // 如果是 AI 消息，即使是我发的代理消息，也不应该显示在右边，而应该显示在左边
+    // 并且头像和名字要是机器人的
+    if (isAi) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 16),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            CircleAvatar(
+              radius: 16,
+              backgroundColor: Colors.white,
+              child: Container(
+                clipBehavior: Clip.antiAlias,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: Colors.grey.withOpacity(0.1),
+                    width: 0.5,
+                  ),
+                ),
+                padding: const EdgeInsets.all(4),
+                child: SvgPicture.asset(
+                  'images/gemini.svg',
+                  fit: BoxFit.contain,
+                  // width: 20,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Flexible(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.only(left: 4, bottom: 4),
+                    child: Text(
+                      "Gemini",
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.purple,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  // AI 气泡
+                  ChatBubble(
+                    content: msg.content,
+                    isMe: false, // 强制显示在左侧
+                    isRead: true,
+                    onVisible: () {},
+                    // 可以给 Bubble 加个特殊颜色参数，如果 ChatBubble 支持的话
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.only(left: 4, top: 2),
+                    child: Text(
+                      "回复给 ${msg.senderName}",
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: Colors.grey.shade400,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     // 头像组件
     Widget avatar = GestureDetector(
       onTap: () => _goToUserProfile(msg.senderId, msg.senderName),
@@ -368,6 +495,8 @@ class _GroupChatPageState extends State<GroupChatPage> {
         onImagePick: _sendImage, // 暂未实现图片上传
         stickers: _stickers,
         isSending: controller.isSending.value,
+        isAiMode: controller.isAiMode.value,
+        onToggleAiMode: controller.toggleAiMode,
       ),
     );
   }

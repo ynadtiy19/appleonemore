@@ -1,7 +1,9 @@
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
-import 'package:photo_view/photo_view.dart'; // 📦 需要引入 photo_view
+import 'package:flutter/services.dart';
+import 'package:flutter_math_fork/flutter_math.dart';
+import 'package:gpt_markdown/gpt_markdown.dart';
+import 'package:hugeicons/hugeicons.dart';
+import 'package:photo_view/photo_view.dart';
 import 'package:visibility_detector/visibility_detector.dart';
 
 import '../services/api_service.dart';
@@ -11,6 +13,7 @@ class ChatBubble extends StatelessWidget {
   final bool isMe;
   final bool isRead;
   final VoidCallback onVisible;
+  final VoidCallback? onDelete; // ✨ 新增：删除回调
 
   const ChatBubble({
     super.key,
@@ -18,6 +21,7 @@ class ChatBubble extends StatelessWidget {
     required this.isMe,
     required this.isRead,
     required this.onVisible,
+    this.onDelete, // 可选传参
   });
 
   bool get _isImage =>
@@ -45,165 +49,83 @@ class ChatBubble extends StatelessWidget {
     return bubbleContent;
   }
 
-  // ✨ 构建单个现代风格的按钮
-  Widget _buildModernActionItem({
-    required IconData icon,
-    required String title,
-    required VoidCallback onTap,
-    bool isDestructive = false, // 是否是破坏性/取消操作
-    bool showDivider = false, // 是否显示底部分割线
-  }) {
-    return Material(
-      color: Colors.transparent, // 保持透明以透出背景色
-      child: InkWell(
-        onTap: onTap,
-        splashColor: Colors.black.withOpacity(0.05), // 淡淡的水波纹
-        highlightColor: Colors.black.withOpacity(0.03),
-        child: Container(
-          height: 56, // 增加高度，更适合手指点击
-          padding: const EdgeInsets.symmetric(horizontal: 20),
-          decoration: BoxDecoration(
-            border: showDivider
-                ? Border(
-                    bottom: BorderSide(
-                      color: Colors.grey.withOpacity(0.15),
-                      width: 0.5,
-                    ),
-                  )
-                : null,
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center, // 内容居中更现代
-            children: [
-              // 图标
-              Icon(
-                icon,
-                size: 22,
-                color: isDestructive
-                    ? const Color(0xFFFF3B30)
-                    : const Color(0xFF007AFF),
-              ),
-              const SizedBox(width: 12),
-              // 文本
-              Text(
-                title,
-                style: TextStyle(
-                  fontSize: 17,
-                  fontWeight: isDestructive ? FontWeight.w600 : FontWeight.w400,
-                  color: isDestructive
-                      ? const Color(0xFFFF3B30)
-                      : const Color(0xFF333333),
-                  letterSpacing: 0.5,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+  // ✨ 使用你提供的长按弹窗逻辑
+  void _onLongPress(BuildContext context) {
+    HapticFeedback.mediumImpact(); // 添加震动反馈
 
-  void _showBubbleActionSheet(BuildContext context) {
     showModalBottomSheet(
       context: context,
-      backgroundColor: Colors.transparent, // 背景透明
-      elevation: 0,
-      isScrollControlled: true, // 允许自适应高度
-      builder: (BuildContext ctx) {
-        return Container(
-          margin: const EdgeInsets.only(
-            left: 16,
-            right: 16,
-            bottom: 34,
-          ), // 底部留出安全距离
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (_) {
+        return SafeArea(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // --- 第一组：功能按钮 ---
-              ClipRRect(
-                borderRadius: BorderRadius.circular(20), // 大圆角
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10), // 磨砂效果
-                  child: Container(
-                    color: Colors.white.withOpacity(0.92), // 略微半透明的白色
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        _buildModernActionItem(
-                          icon: _isImage
-                              ? Icons.image_outlined
-                              : Icons.copy_rounded,
-                          title: _isImage ? '保存图片' : '复制文本', // 稍微改了一下文案更符合直觉
-                          showDivider: _isImage, // 如果是图片，下面还有一项，所以显示分割线
-                          onTap: () async {
-                            Navigator.pop(ctx);
-                            if (_isImage) {
-                              await ApiService.copyImageFromUrl(_imageUrl);
-                            } else {
-                              await ApiService.copyText(content);
-                            }
-
-                            if (context.mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(_isImage ? '图片已保存' : '文本已复制'),
-                                  behavior: SnackBarBehavior
-                                      .floating, // 悬浮式 SnackBar 更美观
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(10),
-                                  ),
-                                  duration: const Duration(seconds: 1),
-                                ),
-                              );
-                            }
-                          },
-                        ),
-
-                        if (_isImage)
-                          _buildModernActionItem(
-                            icon: Icons.link_rounded,
-                            title: '复制链接',
-                            showDivider: false,
-                            onTap: () async {
-                              Navigator.pop(ctx);
-                              await ApiService.copyText(_imageUrl);
-                              if (context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: const Text('链接已复制'),
-                                    behavior: SnackBarBehavior.floating,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(10),
-                                    ),
-                                    duration: const Duration(seconds: 1),
-                                  ),
-                                );
-                              }
-                            },
-                          ),
-                      ],
-                    ),
+              // 1. 复制内容 (仅当不是图片时显示，或者是图片链接)
+              // 这里逻辑适配：如果不是图片模式，或者是图片但你想复制链接
+              if (!_isImage)
+                ListTile(
+                  leading: const HugeIcon(
+                    icon: HugeIcons.strokeRoundedCopy01,
+                    color: Colors.black87,
                   ),
-                ),
-              ),
+                  title: const Text('复制内容'),
+                  onTap: () {
+                    // 复制逻辑
+                    Clipboard.setData(ClipboardData(text: content));
+                    Navigator.pop(context);
 
-              const SizedBox(height: 12), // 分组间距
-              // --- 第二组：取消按钮 ---
-              ClipRRect(
-                borderRadius: BorderRadius.circular(20),
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                  child: Container(
-                    color: Colors.white.withOpacity(0.92),
-                    child: _buildModernActionItem(
-                      icon: Icons.close_rounded,
-                      title: '取消',
-                      isDestructive: true, // 红色高亮
-                      showDivider: false,
-                      onTap: () => Navigator.pop(ctx),
-                    ),
-                  ),
+                    // 使用 SnackBar 提示 (替代 AppToast)
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('已复制'),
+                        duration: Duration(milliseconds: 800),
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
+                  },
                 ),
+
+              // 2. 如果是图片，可以加一个保存图片 (可选，保留图片功能)
+              if (_isImage)
+                ListTile(
+                  leading: const HugeIcon(
+                    icon: HugeIcons.strokeRoundedImage01,
+                    color: Colors.black87,
+                  ),
+                  title: const Text('保存图片'),
+                  onTap: () async {
+                    Navigator.pop(context);
+                    await ApiService.copyImageFromUrl(
+                      _imageUrl,
+                    ); // 假设 ApiService 有这个方法
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(
+                        context,
+                      ).showSnackBar(const SnackBar(content: Text('图片已保存')));
+                    }
+                  },
+                ),
+
+              // 3. 删除消息
+              ListTile(
+                leading: const HugeIcon(
+                  icon: HugeIcons.strokeRoundedDelete02,
+                  color: Colors.red,
+                ),
+                title: const Text('删除消息', style: TextStyle(color: Colors.red)),
+                onTap: () {
+                  Navigator.pop(context);
+                  // 如果外部传入了 onDelete 逻辑则执行
+                  if (onDelete != null) {
+                    onDelete!();
+                  } else {
+                    debugPrint("删除功能尚未绑定");
+                  }
+                },
               ),
             ],
           ),
@@ -215,7 +137,7 @@ class ChatBubble extends StatelessWidget {
   Widget _buildBubbleUI(BuildContext context) {
     return GestureDetector(
       onLongPress: () {
-        _showBubbleActionSheet(context);
+        _onLongPress(context);
       },
       child: Row(
         mainAxisAlignment: isMe
@@ -224,8 +146,7 @@ class ChatBubble extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           if (!isMe) ...[
-            // CircleAvatar(...),
-            // const SizedBox(width: 8),
+            // 可以在这里加头像
           ],
 
           Flexible(
@@ -233,7 +154,6 @@ class ChatBubble extends StatelessWidget {
               margin: isMe
                   ? const EdgeInsets.only(left: 60)
                   : const EdgeInsets.only(right: 60),
-              // 图片模式下减少内边距，让图片撑满圆角
               padding: _isImage
                   ? const EdgeInsets.all(2)
                   : const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -255,14 +175,16 @@ class ChatBubble extends StatelessWidget {
               ),
               child: _isImage
                   ? _buildImageContent(context)
-                  : Text(
-                      content,
-                      style: TextStyle(
-                        fontSize: 15,
-                        height: 1.4,
-                        color: isMe ? Colors.white : const Color(0xFF333333),
-                      ),
-                    ),
+                  : (isMe
+                        ? Text(
+                            content,
+                            style: const TextStyle(
+                              fontSize: 15,
+                              height: 1.4,
+                              color: Colors.white,
+                            ),
+                          )
+                        : _buildAiMarkdown(context)),
             ),
           ),
         ],
@@ -271,7 +193,6 @@ class ChatBubble extends StatelessWidget {
   }
 
   Widget _buildImageContent(BuildContext context) {
-    // 使用 Hero 动画连接气泡和全屏页
     return GestureDetector(
       onTap: () {
         Navigator.push(
@@ -282,7 +203,7 @@ class ChatBubble extends StatelessWidget {
         );
       },
       child: Hero(
-        tag: _imageUrl + DateTime.now().toString(), // 确保 tag 唯一，或者使用消息ID
+        tag: _imageUrl + DateTime.now().toString(),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(14),
           child: Image.network(
@@ -317,11 +238,142 @@ class ChatBubble extends StatelessWidget {
       ),
     );
   }
+
+  // AI Markdown 渲染组件
+  Widget _buildAiMarkdown(BuildContext context) {
+    return GptMarkdown(
+      content,
+      style: const TextStyle(
+        fontSize: 15,
+        height: 1.6,
+        color: Color(0xFF333333),
+      ),
+      textAlign: TextAlign.left,
+      textScaler: const TextScaler.linear(1),
+      useDollarSignsForLatex: true,
+
+      highlightBuilder: (context, text, style) {
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+          margin: const EdgeInsets.symmetric(horizontal: 2),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF3F4F6),
+            borderRadius: BorderRadius.circular(4),
+            border: Border.all(color: const Color(0xFFE5E7EB)),
+          ),
+          child: Text(
+            text,
+            style: TextStyle(
+              fontFamily: 'monospace',
+              fontSize: (style.fontSize ?? 15) * 0.9,
+              color: const Color(0xFFE01E5A),
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        );
+      },
+
+      latexWorkaround: (tex) {
+        List<String> stack = [];
+        tex = tex.splitMapJoin(
+          RegExp(r"\\text\{|\{|\}|\_"),
+          onMatch: (p) {
+            String input = p[0] ?? "";
+            if (input == r"\text{") stack.add(input);
+            if (stack.isNotEmpty) {
+              if (input == r"{") stack.add(input);
+              if (input == r"}") stack.removeLast();
+              if (input == r"_") return r"\_";
+            }
+            return input;
+          },
+        );
+        return tex.replaceAllMapped(RegExp(r"align\*"), (match) => "aligned");
+      },
+
+      latexBuilder: (context, tex, textStyle, inline) {
+        if (tex.contains(r"\begin{tabular}")) {
+          String tableString =
+              "|${(RegExp(r"^\\begin\{tabular\}\{.*?\}(.*?)\\end\{tabular\}$", multiLine: true, dotAll: true).firstMatch(tex)?[1] ?? "").trim()}|";
+
+          tableString = tableString
+              .replaceAll(r"\\", "|\n|")
+              .replaceAll(r"\hline", "")
+              .replaceAll(RegExp(r"(?<!\\)&"), "|");
+
+          var tableStringList = tableString.split("\n")..insert(1, "|---|");
+          tableString = tableStringList.join("\n");
+
+          return GptMarkdown(tableString);
+        }
+
+        var controller = ScrollController();
+
+        Widget child = Math.tex(
+          tex,
+          textStyle: textStyle.copyWith(color: Colors.black87),
+          onErrorFallback: (err) =>
+              Text(tex, style: textStyle.copyWith(color: Colors.red)),
+        );
+
+        if (!inline) {
+          child = Container(
+            width: double.infinity,
+            margin: const EdgeInsets.symmetric(vertical: 8),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.grey.shade200),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.02),
+                  blurRadius: 4,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Scrollbar(
+              controller: controller,
+              thumbVisibility: true,
+              child: SingleChildScrollView(
+                controller: controller,
+                scrollDirection: Axis.horizontal,
+                child: child,
+              ),
+            ),
+          );
+        }
+
+        return SelectionArea(child: child);
+      },
+
+      sourceTagBuilder: (buildContext, string, textStyle) {
+        var value = int.tryParse(string);
+        value ??= -1;
+        value += 1;
+        return Container(
+          margin: const EdgeInsets.only(left: 2, right: 2, bottom: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          decoration: BoxDecoration(
+            color: Colors.blue.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: Text(
+            "$value",
+            style: const TextStyle(
+              fontSize: 10,
+              color: Colors.blueAccent,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        );
+      },
+    );
+  }
 }
 
-// =========================================================
-// 📸 新增：图片全屏预览页 (支持双指缩放)
-// =========================================================
+// 图片预览组件
 class ImagePreviewPage extends StatelessWidget {
   final String imageUrl;
 
@@ -330,8 +382,7 @@ class ImagePreviewPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.black, // 全屏查看通常是黑色背景
-      // Appbar 可选，通常全屏查看是沉浸式的
+      backgroundColor: Colors.black,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
@@ -340,23 +391,18 @@ class ImagePreviewPage extends StatelessWidget {
           onPressed: () => Navigator.of(context).pop(),
         ),
       ),
-      extendBodyBehindAppBar: true, // 让图片延伸到顶部
+      extendBodyBehindAppBar: true,
       body: Center(
         child: Hero(
-          tag: imageUrl, // 对应 ChatBubble 里的 tag
+          tag: imageUrl,
           child: PhotoView(
             imageProvider: NetworkImage(imageUrl),
-            // 设置背景色为透明，以便看到 Scaffold 的黑色背景
             backgroundDecoration: const BoxDecoration(color: Colors.black),
-            // 最小缩放
             minScale: PhotoViewComputedScale.contained,
-            // 最大缩放
             maxScale: PhotoViewComputedScale.covered * 2.5,
-            // 加载时的占位
             loadingBuilder: (context, event) => const Center(
               child: CircularProgressIndicator(color: Colors.white),
             ),
-            // 错误处理
             errorBuilder: (context, error, stackTrace) => const Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [

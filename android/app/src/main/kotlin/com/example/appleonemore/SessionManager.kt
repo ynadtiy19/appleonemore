@@ -35,6 +35,7 @@ class SessionManager private constructor(
             }
         }
 
+        // Map app contact names to backend character names
         private fun getBackendCharacter(contactName: String): String {
             val character = extractCharacterFromKey(contactName)
             return when (character.lowercase()) {
@@ -59,8 +60,9 @@ class SessionManager private constructor(
         val contactKey: String,
         val language: String,
         val createdAt: Long,
-        var isPromptComplete: Boolean = false,
-        var promptProgress: Float = 0f,
+        // [修改] 默认为 true，因为不再需要预热
+        var isPromptComplete: Boolean = true,
+        var promptProgress: Float = 1.0f,
         var isAvailable: Boolean = true,
         var isInUse: Boolean = false,
         var job: Job
@@ -78,15 +80,14 @@ class SessionManager private constructor(
     private val sessionCounter = AtomicInteger(0)
     private val creationInProgress = AtomicBoolean(false)
     private lateinit var tokenManager: TokenManager
-    private lateinit var audioFileProcessor: AudioFileProcessor
+    // [删除] AudioFileProcessor 不再需要
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     fun initialize(tokenManager: TokenManager) {
         this.tokenManager = tokenManager
-        this.audioFileProcessor = AudioFileProcessor(context)
 
         if (isRunning.compareAndSet(false, true)) {
-            Log.i(TAG, "[$contactName] Initializing session pool with $poolSize sessions")
+            Log.i(TAG, "[$contactName] Initializing session pool with $poolSize sessions (No-Cooking Mode)")
             startPoolMaintenance()
         }
     }
@@ -148,18 +149,18 @@ class SessionManager private constructor(
             val character = getBackendCharacter(contactName)
             val sessionIndex = sessionCounter.incrementAndGet()
 
-            // [优化] 减少会话建立之间的抖动延迟
-            val jitter = (500..1500).random()
-            val baseDelay = 1000L
-            delay(baseDelay + jitter)
+            // 减少抖动延迟，加快建立速度
+            val jitter = (100..500).random()
+            delay(500L + jitter)
 
             scope.launch {
                 try {
+                    Log.i(TAG, "[$contactName] Creating WebSocket for session #${sessionIndex}")
                     val webSocket = SesameWebSocket(validToken, character, "RP-Android")
 
                     if (webSocket.connect()) {
                         var attempts = 0
-                        val maxAttempts = 200
+                        val maxAttempts = 100 // 10秒超时
                         while (!webSocket.isConnected() && attempts < maxAttempts) {
                             delay(100)
                             attempts++
@@ -167,18 +168,23 @@ class SessionManager private constructor(
 
                         if (webSocket.isConnected()) {
                             val actualLanguage = extractLanguageFromKey(contactName)
+
+                            // [核心修改] 创建即 Ready
                             val sessionState = SessionState(
                                 webSocket = webSocket,
                                 character = character,
                                 contactKey = contactName,
                                 language = actualLanguage,
                                 createdAt = System.currentTimeMillis(),
+                                isPromptComplete = true, // 这一步直接完成
+                                promptProgress = 1.0f,
                                 job = coroutineContext[Job]!!
                             )
 
                             sessionPool.offer(sessionState)
-                            // 立即开始发送预录制音频
-                            sendPreRecordedAudioToSession(webSocket, character, sessionIndex)
+                            Log.i(TAG, "[$contactName] Session #${sessionIndex} connected and READY (No Cooking).")
+
+                            // [删除] sendPreRecordedAudioToSession 调用
                         } else {
                             webSocket.disconnect()
                         }
@@ -219,69 +225,7 @@ class SessionManager private constructor(
         }
     }
 
-    private suspend fun sendPreRecordedAudioToSession(webSocket: SesameWebSocket, character: String, sessionNumber: Int) {
-        try {
-            val characterName = extractCharacterFromKey(contactName).lowercase()
-            val language = extractLanguageFromKey(contactName).lowercase()
-
-            val audioFileName = when (characterName) {
-                "kira" -> if (language == "fr") "kira_fr.wav" else "kira_en.wav"
-                "hugo" -> if (language == "fr") "hugo_fr.wav" else "hugo_en.wav"
-                else -> "kira_en.wav"
-            }
-
-            val audioChunks = audioFileProcessor.loadWavFile(audioFileName)
-            if (audioChunks != null && audioChunks.isNotEmpty()) {
-                val sessionState = sessionPool.find { it.webSocket == webSocket }
-
-                for (i in audioChunks.indices) {
-                    val chunk = audioChunks[i]
-                    if (!webSocket.isConnected()) break
-
-                    webSocket.sendAudioData(chunk)
-
-                    sessionState?.let { state ->
-                        state.promptProgress = (i + 1).toFloat() / audioChunks.size
-                    }
-
-                    // [核心修复] 将这里原本的 64ms 延迟极大缩短
-                    // 原本是模拟真实语速发送(Real-time)，现在改为极速发送(Upload mode)
-                    // 这样服务器可以瞬间接收完整个音频并完成处理
-                    delay(5)
-                }
-
-                val silenceChunk = ByteArray(2048) { 0 }
-                webSocket.sendAudioData(silenceChunk)
-
-                sessionState?.let { state ->
-                    state.promptProgress = 1.0f
-                    state.isPromptComplete = true
-                    state.isAvailable = true
-                }
-
-                // 等待服务器处理
-                delay(200)
-
-                // 如果 session 此时仍未被用户占用，且已完成预热，为了保持池子新鲜度，
-                // 可以考虑在一段时间后替换它。
-                sessionState?.let { state ->
-                    scope.launch {
-                        delay(10000) // 延长保留时间至10秒
-                        if (!state.isInUse) {
-                            state.job.cancel()
-                            state.webSocket.disconnect()
-                            sessionPool.remove(state)
-                            // 触发重新创建
-                            pendingCreations.incrementAndGet()
-                            try { createSessionWithTimer() } finally { pendingCreations.decrementAndGet() }
-                        }
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error sending pre-recorded audio", e)
-        }
-    }
+    // [删除] sendPreRecordedAudioToSession 方法已完全移除
 
     fun getBestAvailableSession(preferredCharacter: String? = null): SessionState? {
         val backendCharacter = getBackendCharacter(contactName)
@@ -293,9 +237,8 @@ class SessionManager private constructor(
                     it.language == requestedLanguage
         }
 
-        val bestSession = availableSessions.maxByOrNull { session ->
-            if (session.isPromptComplete) 100f else session.promptProgress
-        }
+        // 直接取第一个，因为所有 Session 都是 Ready 的
+        val bestSession = availableSessions.firstOrNull()
 
         bestSession?.let { session ->
             session.isInUse = true
@@ -322,26 +265,12 @@ class SessionManager private constructor(
     }
 
     fun getSessionProgress(): Pair<Float, Boolean>? {
-        val backendCharacter = getBackendCharacter(contactName)
-        val contactSessions = sessionPool.filter {
-            it.character == backendCharacter && it.contactKey == contactName && it.webSocket.isConnected()
-        }
-
-        if (contactSessions.isEmpty()) {
-            return null
-        }
-
-        val bestSession = contactSessions.maxWithOrNull(compareBy<SessionState> {
-            if (it.isPromptComplete) 1000f else it.promptProgress
-        }.thenBy { it.promptProgress })
-
-        return bestSession?.let {
-            Pair(it.promptProgress, it.isPromptComplete)
-        }
+        // 在新模式下，这里总是返回 (1.0, true)
+        return Pair(1.0f, true)
     }
 
     fun getAllSessionsProgress(): List<SessionInfo> {
-        return emptyList() // 简化
+        return emptyList()
     }
 
     fun shutdown() {
