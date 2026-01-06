@@ -15,6 +15,7 @@ import '../services/db_service.dart';
 import '../services/frontend_chat_service.dart';
 import '../services/quill_translation_service.dart';
 import '../services/storage_service.dart';
+import '../widgets/quill_custom_divider.dart';
 import 'user_profile_page.dart';
 
 class PostDetailPage extends StatefulWidget {
@@ -447,8 +448,37 @@ class _PostDetailPageState extends State<PostDetailPage>
                               child: quill.QuillEditor.basic(
                                 controller: _readC!,
                                 config: quill.QuillEditorConfig(
-                                  embedBuilders:
-                                      FlutterQuillEmbeds.editorBuilders(),
+                                  customStyles: const quill.DefaultStyles(
+                                    paragraph: quill.DefaultTextBlockStyle(
+                                      TextStyle(
+                                        fontSize: 20.0,
+                                        color: Colors.black87,
+                                        height: 1.5,
+                                        fontFamily: 'ShantellSans',
+                                      ),
+                                      quill.HorizontalSpacing(0, 0), // 水平间距
+                                      quill.VerticalSpacing(0, 0), // 垂直间距
+                                      quill.VerticalSpacing(0, 0), // 行间距
+                                      null, // 装饰
+                                    ),
+
+                                    placeHolder: quill.DefaultTextBlockStyle(
+                                      TextStyle(
+                                        fontSize: 20.0,
+                                        color: Color(0xFF9CA3AF),
+                                        height: 1.5,
+                                        fontFamily: 'ShantellSans',
+                                      ),
+                                      quill.HorizontalSpacing(0, 0),
+                                      quill.VerticalSpacing(0, 0),
+                                      quill.VerticalSpacing(0, 0),
+                                      null,
+                                    ),
+                                  ),
+                                  embedBuilders: [
+                                    DividerEmbedBuilder(),
+                                    ...FlutterQuillEmbeds.editorBuilders(),
+                                  ],
                                 ),
                               ),
                             ),

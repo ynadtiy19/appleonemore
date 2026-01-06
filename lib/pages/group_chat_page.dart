@@ -16,15 +16,13 @@ import '../services/storage_service.dart';
 import '../services/third_party_ai_service.dart';
 import '../widgets/ChatBubble.dart';
 import '../widgets/chat_input_widget.dart';
-import 'user_profile_page.dart'; // ✅ 引入用户个人主页
+import 'user_profile_page.dart';
 
-// --- 群聊控制器 ---
 class GroupChatController extends GetxController {
   final DbService _db = Get.find();
   final FrontendChatService _chatService = Get.find();
   final StorageService _storage = Get.find();
 
-  // ✅ 1. 注入 AI 服务
   final ThirdPartyAiService _aiService = Get.put(ThirdPartyAiService());
 
   // 群聊列表
@@ -322,8 +320,6 @@ class _GroupChatPageState extends State<GroupChatPage> {
     // ✅ 判定是否为 AI 消息 (Type == 3)
     bool isAi = msg.type == 3;
 
-    // 如果是 AI 消息，即使是我发的代理消息，也不应该显示在右边，而应该显示在左边
-    // 并且头像和名字要是机器人的
     if (isAi) {
       return Padding(
         padding: const EdgeInsets.only(bottom: 16),
@@ -362,20 +358,20 @@ class _GroupChatPageState extends State<GroupChatPage> {
                       style: TextStyle(
                         fontSize: 11,
                         color: Colors.purple,
-                        fontWeight: FontWeight.bold,
+                        fontFamily: 'GabrielaStencil',
+                        fontWeight: FontWeight.w300,
                       ),
                     ),
                   ),
-                  // AI 气泡
                   ChatBubble(
                     content: msg.content,
-                    isMe: false, // 强制显示在左侧
+                    isMe: false,
                     isRead: true,
                     onVisible: () {},
                     // 可以给 Bubble 加个特殊颜色参数，如果 ChatBubble 支持的话
                   ),
                   Padding(
-                    padding: const EdgeInsets.only(left: 4, top: 2),
+                    padding: const EdgeInsets.only(left: 8, top: 6),
                     child: Text(
                       "回复给 ${msg.senderName}",
                       style: TextStyle(
@@ -417,14 +413,12 @@ class _GroupChatPageState extends State<GroupChatPage> {
     );
 
     if (isMe) {
-      // --- 我发的消息 (右侧) ---
       return Padding(
         padding: const EdgeInsets.only(bottom: 16),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.end,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 气泡
             Flexible(
               child: ChatBubble(
                 content: msg.content,
@@ -445,15 +439,12 @@ class _GroupChatPageState extends State<GroupChatPage> {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 头像
             avatar,
             const SizedBox(width: 8),
-            // 昵称 + 气泡
             Flexible(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // 昵称 (可点击)
                   GestureDetector(
                     onTap: () => _goToUserProfile(msg.senderId, msg.senderName),
                     child: Padding(
@@ -463,6 +454,8 @@ class _GroupChatPageState extends State<GroupChatPage> {
                         style: const TextStyle(
                           fontSize: 11,
                           color: Colors.grey,
+                          fontFamily: 'GabrielaStencil',
+                          fontWeight: FontWeight.w300,
                         ),
                       ),
                     ),

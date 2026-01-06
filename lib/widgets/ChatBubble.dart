@@ -49,9 +49,8 @@ class ChatBubble extends StatelessWidget {
     return bubbleContent;
   }
 
-  // ✨ 使用你提供的长按弹窗逻辑
   void _onLongPress(BuildContext context) {
-    HapticFeedback.mediumImpact(); // 添加震动反馈
+    HapticFeedback.mediumImpact();
 
     showModalBottomSheet(
       context: context,
@@ -64,8 +63,6 @@ class ChatBubble extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // 1. 复制内容 (仅当不是图片时显示，或者是图片链接)
-              // 这里逻辑适配：如果不是图片模式，或者是图片但你想复制链接
               if (!_isImage)
                 ListTile(
                   leading: const HugeIcon(
@@ -78,7 +75,6 @@ class ChatBubble extends StatelessWidget {
                     Clipboard.setData(ClipboardData(text: content));
                     Navigator.pop(context);
 
-                    // 使用 SnackBar 提示 (替代 AppToast)
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
                         content: Text('已复制'),
@@ -89,7 +85,6 @@ class ChatBubble extends StatelessWidget {
                   },
                 ),
 
-              // 2. 如果是图片，可以加一个保存图片 (可选，保留图片功能)
               if (_isImage)
                 ListTile(
                   leading: const HugeIcon(
@@ -153,17 +148,17 @@ class ChatBubble extends StatelessWidget {
             child: Container(
               margin: isMe
                   ? const EdgeInsets.only(left: 60)
-                  : const EdgeInsets.only(right: 60),
+                  : const EdgeInsets.only(right: 15),
               padding: _isImage
                   ? const EdgeInsets.all(2)
                   : const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               decoration: BoxDecoration(
                 color: isMe ? const Color(0xFF4A6CF7) : Colors.white,
                 borderRadius: BorderRadius.only(
-                  topLeft: const Radius.circular(18),
-                  topRight: const Radius.circular(18),
-                  bottomLeft: Radius.circular(isMe ? 18 : 4),
-                  bottomRight: Radius.circular(isMe ? 4 : 18),
+                  topLeft: Radius.circular(isMe ? 18 : 4),
+                  topRight: Radius.circular(isMe ? 4 : 18),
+                  bottomLeft: const Radius.circular(18),
+                  bottomRight: const Radius.circular(18),
                 ),
                 boxShadow: [
                   BoxShadow(
@@ -180,8 +175,10 @@ class ChatBubble extends StatelessWidget {
                             content,
                             style: const TextStyle(
                               fontSize: 15,
-                              height: 1.4,
+                              height: 1.1,
                               color: Colors.white,
+                              fontFamily: 'Lato',
+                              fontWeight: FontWeight.w300,
                             ),
                           )
                         : _buildAiMarkdown(context)),
@@ -247,6 +244,8 @@ class ChatBubble extends StatelessWidget {
         fontSize: 15,
         height: 1.6,
         color: Color(0xFF333333),
+        fontFamily: 'ShantellSans',
+        fontWeight: FontWeight.w300,
       ),
       textAlign: TextAlign.left,
       textScaler: const TextScaler.linear(1),

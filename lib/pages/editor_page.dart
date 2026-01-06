@@ -12,6 +12,7 @@ import '../services/api_service.dart';
 import '../services/db_service.dart';
 import '../services/storage_service.dart';
 import '../widgets/app_toast.dart';
+import '../widgets/quill_custom_divider.dart';
 
 class EditorPage extends StatefulWidget {
   const EditorPage({super.key});
@@ -26,6 +27,62 @@ class _EditorPageState extends State<EditorPage> {
   final ScrollController _editorScrollC = ScrollController();
 
   bool _isSubmitting = false;
+
+  void _insertDivider() {
+    var index = _quillC.selection.baseOffset;
+    final length = _quillC.selection.extentOffset - index;
+
+    bool prependNewline = false;
+    if (index > 0) {
+      final plainText = _quillC.document.toPlainText();
+      if (index - 1 < plainText.length && plainText[index - 1] != '\n') {
+        prependNewline = true;
+      }
+    }
+
+    if (prependNewline) {
+      // 场景：在 "文字|文字" 中间插入
+      // 逻辑：替换选区(或插入点)为 \n -> 插入分割线 -> 插入 \n
+
+      // 3.1 先插入前置换行符（如果有选区，replaceText 会先删除选区内容）
+      _quillC.replaceText(index, length, '\n', null);
+      index++;
+
+      // 3.2 插入分割线
+      _quillC.replaceText(
+        index,
+        0,
+        quill.BlockEmbed.custom(const DividerBlockEmbed()),
+        null,
+      );
+
+      // 3.3 插入后置换行符（确保分割线后能输入文字）
+      _quillC.replaceText(index + 1, 0, '\n', null);
+
+      _quillC.updateSelection(
+        TextSelection.collapsed(offset: index + 2),
+        quill.ChangeSource.local,
+      );
+    } else {
+      _quillC.replaceText(
+        index,
+        length,
+        quill.BlockEmbed.custom(const DividerBlockEmbed()),
+        null,
+      );
+
+      _quillC.replaceText(index + 1, 0, '\n', null);
+
+      _quillC.updateSelection(
+        TextSelection.collapsed(offset: index + 2),
+        quill.ChangeSource.local,
+      );
+    }
+
+    if (!_quillC.ignoreFocusOnTextChange) {
+      // 通常不需要额外操作，但如果焦点丢失可以调用 FocusScope.of(context).requestFocus();
+    }
+  }
 
   Future<void> _pickImage() async {
     final picker = ImagePicker();
@@ -48,14 +105,11 @@ class _EditorPageState extends State<EditorPage> {
     }
   }
 
-  // 插入图片/GIF 到底层逻辑
   void _insertImageToEditor(String url) {
     final index = _quillC.selection.baseOffset;
     final length = _quillC.selection.extentOffset - index;
 
-    // 1. 插入图片
     _quillC.replaceText(index, length, quill.BlockEmbed.image(url), null);
-    // 2. 关键：立即在图片后插入一个换行符，并把光标移过去
     _quillC.replaceText(index + 1, 0, '\n', null);
     _quillC.updateSelection(
       TextSelection.collapsed(offset: index + 2),
@@ -63,7 +117,6 @@ class _EditorPageState extends State<EditorPage> {
     );
   }
 
-  // 弹出 GIF 选择器
   void _pickGif() {
     showModalBottomSheet(
       context: context,
@@ -205,12 +258,13 @@ class _EditorPageState extends State<EditorPage> {
             controller: _quillC,
             onImageTap: _pickImage,
             onGifTap: _pickGif,
+            onDividerTap: _insertDivider,
             onToggle: _toggleAttribute,
           ),
           Expanded(
             child: Container(
               margin: const EdgeInsets.fromLTRB(16, 12, 16, 20),
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(24),
@@ -230,9 +284,39 @@ class _EditorPageState extends State<EditorPage> {
                   placeholder: '这一刻的想法...',
                   autoFocus: false,
                   checkBoxReadOnly: false,
-                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  padding: const EdgeInsets.symmetric(vertical: 2),
                   expands: true,
-                  embedBuilders: FlutterQuillEmbeds.editorBuilders(),
+                  customStyles: const quill.DefaultStyles(
+                    paragraph: quill.DefaultTextBlockStyle(
+                      TextStyle(
+                        fontSize: 20.0,
+                        color: Colors.black87,
+                        height: 1.5,
+                        fontFamily: 'ShantellSans',
+                      ),
+                      quill.HorizontalSpacing(0, 0), // 水平间距
+                      quill.VerticalSpacing(0, 0), // 垂直间距
+                      quill.VerticalSpacing(0, 0), // 行间距
+                      null, // 装饰
+                    ),
+
+                    placeHolder: quill.DefaultTextBlockStyle(
+                      TextStyle(
+                        fontSize: 20.0,
+                        color: Color(0xFF9CA3AF),
+                        height: 1.5,
+                        fontFamily: 'ShantellSans',
+                      ),
+                      quill.HorizontalSpacing(0, 0),
+                      quill.VerticalSpacing(0, 0),
+                      quill.VerticalSpacing(0, 0),
+                      null,
+                    ),
+                  ),
+                  embedBuilders: [
+                    DividerEmbedBuilder(),
+                    ...FlutterQuillEmbeds.editorBuilders(),
+                  ],
                 ),
               ),
             ),
@@ -511,12 +595,14 @@ class _EnhancedToolbar extends StatelessWidget {
   final quill.QuillController controller;
   final VoidCallback onImageTap;
   final VoidCallback onGifTap;
+  final VoidCallback onDividerTap;
   final Function(quill.Attribute) onToggle;
 
   const _EnhancedToolbar({
     required this.controller,
     required this.onImageTap,
     required this.onGifTap,
+    required this.onDividerTap,
     required this.onToggle,
   });
 
@@ -558,6 +644,15 @@ class _EnhancedToolbar extends StatelessWidget {
                 null,
                 isAction: true,
                 onTap: onGifTap,
+              ),
+
+              _vDivider(),
+
+              _toolBtn(
+                HugeIcons.strokeRoundedMenu04,
+                null,
+                isAction: true,
+                onTap: onDividerTap,
               ),
 
               _vDivider(),

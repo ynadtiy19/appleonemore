@@ -8,8 +8,6 @@ on:
 
 env:
   JAVA_VERSION: "17"
-  # Disable Gradle Daemon to prevent locking/caching issues in CI
-  GRADLE_OPTS: "-Dorg.gradle.daemon=false"
 
 jobs:
   android-linux:
@@ -27,7 +25,7 @@ jobs:
       - name: Set up Java ${{ env.JAVA_VERSION }}
         uses: actions/setup-java@v4
         with:
-          distribution: temurin # Changed from jetbrains to temurin for better CI stability
+          distribution: jetbrains
           java-version: ${{ env.JAVA_VERSION }}
 
       - name: Set up Flutter
@@ -36,27 +34,22 @@ jobs:
           flutter-version: "3.38.5"
           cache: true
 
-      # 【Updated Step】Fixes gradle.properties AND patches settings.gradle.kts for 403 errors
-      - name: Fix Android Build Config (Proxies & Repositories)
+      # 【新增步骤】关键修改：删除 android/gradle.properties 中的本地代理和路径配置
+      # 这解决了 "Connection refused" 和路径错误，同时保留了你本地的配置不动
+      - name: Clean up gradle.properties (Remove local proxies)
         run: |
-          # 1. Clean gradle.properties
           if [ -f "android/gradle.properties" ]; then
             echo "Found android/gradle.properties, removing proxy settings..."
             sed -i '/systemProp/d' android/gradle.properties
             sed -i '/org.gradle.java.home/d' android/gradle.properties
-          fi
-
-          # 2. Patch settings.gradle.kts to fix 403 Forbidden errors
-          # This forces google() to be the first repository checked, bypassing Maven Central blocks
-          if [ -f "android/settings.gradle.kts" ]; then
-            echo "Patching android/settings.gradle.kts to prioritize google() repo..."
-            # Replaces 'repositories {' with 'repositories { google(); maven { url = uri("https://storage.googleapis.com/download.flutter.io") };'
-            sed -i 's/repositories {/repositories { google(); maven { url = uri("https:\/\/storage.googleapis.com\/download.flutter.io") }; /g' android/settings.gradle.kts
-            echo "Patched settings.gradle.kts content:"
-            cat android/settings.gradle.kts
+            echo "Content after cleanup:"
+            cat android/gradle.properties
+          else
+            echo "android/gradle.properties not found, skipping cleanup."
           fi
 
       - name: Build APKs
+        # 注意：如果没有配置签名文件，这里生成的 Release 包通常是未签名或使用 Debug 签名的
         run: |
           flutter build apk --release --split-per-abi
 
@@ -64,16 +57,10 @@ jobs:
         run: |
           mkdir -p dist
           TAG="${GITHUB_REF_NAME}"
-          # Copy artifacts if they exist
-          if [ -f build/app/outputs/flutter-apk/app-arm64-v8a-release.apk ]; then
-             cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk dist/guanbiziran-${TAG}-android-arm64-v8a.apk
-          fi
-          if [ -f build/app/outputs/flutter-apk/app-x86_64-release.apk ]; then
-             cp build/app/outputs/flutter-apk/app-x86_64-release.apk dist/guanbiziran-${TAG}-android-x86_64.apk
-          fi
-          if [ -f build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk ]; then
-             cp build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk dist/guanbiziran-${TAG}-android-armeabi-v7a.apk
-          fi
+          # 如果构建成功，这里会将产物重命名并移动到 dist 目录
+          cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk dist/guanbiziran-${TAG}-android-arm64-v8a.apk
+          cp build/app/outputs/flutter-apk/app-x86_64-release.apk   dist/guanbiziran-${TAG}-android-x86_64.apk
+          cp build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk dist/guanbiziran-${TAG}-android-armeabi-v7a.apk
 
       - name: Upload APK artifacts
         uses: actions/upload-artifact@v4
