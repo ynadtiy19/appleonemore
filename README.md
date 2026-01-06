@@ -57,7 +57,7 @@
 
 *   已安装 Flutter SDK ([安装指南](https://flutter.dev/docs/get-started/install))
 *   Dart SDK
-*   Lsisql 数据库环境 (请确保数据库服务已启动)
+*   Libsql 数据库环境 (请确保数据库服务已启动)
 
 ### 安装步骤
 
